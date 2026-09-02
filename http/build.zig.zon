@@ -1,0 +1,18 @@
+.{
+    .name = .http_server,
+    .version = "0.1.0",
+    .fingerprint = 0x411f0d3101a4936a,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // Build-time only: supplies the `docs` step. Ships nothing into the
+        // library itself, so consumers of publr_http never see it.
+        .publr_tools = .{ .path = "../tools" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build",
+        "src",
+        "examples",
+    },
+}

@@ -1,0 +1,18 @@
+{
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+localhost:8443 {
+	tls internal
+
+	handle /static/* {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8090
+	}
+}

@@ -1,0 +1,17 @@
+const std = @import("std");
+const build_library = @import("build/library.zig").build;
+const build_standalone = @import("build/standalone.zig").build;
+const build_examples = @import("build/examples.zig").build;
+const build_tests = @import("build/tests.zig").build;
+const amalgamate = @import("publr_tools").amalgamate;
+const build_docs = @import("publr_tools").docs;
+
+pub fn build(b: *std.Build) void {
+    const library = build_library(b);
+    const amalgamation = amalgamate(b, library, .{});
+
+    build_standalone(b, library);
+    build_examples(b, library);
+    build_tests(b, library, amalgamation.module);
+    build_docs(b, amalgamation, .{});
+}

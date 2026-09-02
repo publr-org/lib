@@ -1,0 +1,41 @@
+# Peak-throughput profile. Run with one worker per performance core; the phase spec below
+# executes in EVERY worker, so effective arrivals and concurrency multiply by --count:
+#
+#   ./zig-out/bin/http-server serve --port 8090 --connections 10000
+#   artillery run --count 12 stress/peak.yml
+#
+# Design: few arrivals, long keep-alive loops, and a hard maxVusers cap per phase. Load
+# comes from persistent connections round-tripping flat out (closed loop), not from
+# connection churn, so macOS's low somaxconn (128) never sees a SYN burst. Steps raise
+# concurrency so the saturation point is visible in the 10-second interval reports.
+# The authoritative throughput number is the server's own /stats delta, not the client's.
+config:
+  target: http://143.198.142.123
+  http:
+    timeout: 10
+  phases:
+    - duration: 30
+      arrivalRate: 10
+      maxVusers: 50
+      name: Step 1 (50 vusers/worker)
+    - duration: 30
+      arrivalRate: 20
+      maxVusers: 100
+      name: Step 2 (100 vusers/worker)
+    - duration: 60
+      arrivalRate: 40
+      maxVusers: 200
+      name: Step 3 (200 vusers/worker)
+  plugins:
+    ensure:
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+
+scenarios:
+  - name: Hammer health
+    flow:
+      - loop:
+          - get:
+              url: '/health'
+        count: 2000

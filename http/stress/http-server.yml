@@ -1,0 +1,58 @@
+# Stress test for the http-server POC.
+#
+# Run (server first, then artillery):
+#   ./zig-out/bin/http-server serve --port 8090 --connections 10000
+#   artillery run stress/http-server.yml
+#
+# Shape: warm up, ramp to peak arrivals, hold the peak. Every virtual user opens its own
+# keep-alive connection and burns through a page-plus-health loop, so the sustained phase
+# exercises connection churn, keep-alive reuse, and pipelaned accept batches at once.
+# The ensure thresholds make the run pass/fail objectively; on localhost the server should
+# sit far below them, so a failure means a real regression (or a busy laptop).
+config:
+  target: http://127.0.0.1:8090
+  http:
+    # Fail fast instead of hanging virtual users when something is actually wrong.
+    timeout: 10
+  phases:
+    - duration: 30
+      arrivalRate: 10
+      rampTo: 50
+      name: Warm up
+    - duration: 60
+      arrivalRate: 50
+      rampTo: 200
+      name: Ramp to peak
+    - duration: 60
+      arrivalRate: 200
+      name: Sustained peak
+  plugins:
+    ensure:
+      thresholds:
+        - http.response_time.p95: 20
+        - http.response_time.p99: 50
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+    apdex:
+      threshold: 25
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: Browse and poll health
+    weight: 9
+    flow:
+      - loop:
+          - get:
+              url: '/'
+          - get:
+              url: '/health'
+        count: 20
+
+  - name: Operator polls stats
+    weight: 1
+    flow:
+      - loop:
+          - get:
+              url: '/stats'
+        count: 5

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>http-server behind a reverse proxy</title>
+</head>
+<body>
+<p>This static file is served directly by the reverse proxy (Caddy or nginx) over
+whatever protocol your client negotiated (check devtools' network panel, or
+<code>curl -v --http2</code>).</p>
+<p>API traffic on this same origin (<a href="/health">/health</a>, <a href="/stats">/stats</a>)
+is reverse-proxied to the Zig backend over plain HTTP/1.1 on 127.0.0.1:8090.</p>
+</body>
+</html>

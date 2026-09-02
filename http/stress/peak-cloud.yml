@@ -1,0 +1,40 @@
+# Wide-fleet cloud profile: run with MANY small workers so each stays far from
+# saturation. An oversubscribed worker queues responses in its own event loop and
+# corrupts the latency percentiles; a wide fleet keeps the client honest and the
+# offered load high. Designed for:
+#
+#   artillery run --platform aws:lambda \
+#     --platform-opt region=us-east-1 --platform-opt memory-size=1024 \
+#     --count 150 -t http://<server>:8090 stress/peak-cloud.yml
+#
+# Per-worker concurrency is capped low (50); scale total load with --count.
+# 150 workers: ~7,500 connections, ~200k+ req/s offered.
+# The authoritative throughput and saturation numbers come from the server's /stats
+# (requests_total and cpu_micros_total deltas), not from client-side interval reports,
+# which under-report with distributed workers.
+config:
+  target: http://127.0.0.1:8090
+  http:
+    timeout: 10
+  phases:
+    - duration: 30
+      arrivalRate: 2
+      maxVusers: 20
+      name: Warm up
+    - duration: 120
+      arrivalRate: 5
+      maxVusers: 50
+      name: Sustained wide load
+  plugins:
+    ensure:
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+
+scenarios:
+  - name: Hammer health
+    flow:
+      - loop:
+          - get:
+              url: '/health'
+        count: 1000

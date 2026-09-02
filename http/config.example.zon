@@ -1,0 +1,18 @@
+// Example http-server configuration. Copy, edit, run:
+//   ./zig-out/bin/hello --config my-config.zon
+// Every field is optional; a field omitted keeps the app's defaults (for the
+// standalone server, the built-in defaults shown here). CLI flags override file
+// values. The same struct configures the server when it is embedded
+// programmatically (server.Options).
+.{
+    // The address default depends on the build mode (debug: 127.0.0.1, this machine
+    // only; release: 0.0.0.0, all interfaces); set it here to pin one regardless.
+    .address = .{ 0, 0, 0, 0 },
+    .port = 8080,
+    .connections_max = 4096,
+    .request_bytes_max = 16384,
+    .response_bytes_max = 32768,
+    .idle_timeout_ms = 15000,
+    .request_timeout_ms = 30000,
+    .shutdown_timeout_ms = 5000,
+}

@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Refined to "<module> — API reference" once the index has loaded. -->
+    <title>API reference</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23246bfd'/%3E%3Cpath d='M9 21.5V10.5h4.6c2.6 0 4.2 1.4 4.2 3.6 0 2.3-1.6 3.7-4.3 3.7h-2v3.7H9Zm2.5-5.7h1.8c1.2 0 1.9-.6 1.9-1.7s-.7-1.7-1.9-1.7h-1.8v3.4Z' fill='white'/%3E%3Cpath d='M19.5 21.5V10.5H22v9h4.5v2h-7Z' fill='white' opacity='.65'/%3E%3C/svg%3E">
+    <style type="text/css">
+      /* ---------------------------------------------------------------
+         Design tokens. Swap this block to re-skin the whole reference.
+         --------------------------------------------------------------- */
+      :root {
+        color-scheme: light dark;
+
+        --bg:            #fbfbfd;
+        --bg-raised:     #ffffff;
+        --bg-sunken:     #f3f4f7;
+        --bg-code:       #f6f7f9;
+
+        --fg:            #14161a;
+        --fg-muted:      #5b6270;
+        --fg-faint:      #878e9c;
+
+        --border:        #e3e5ea;
+        --border-strong: #cdd1da;
+
+        --accent:        #246bfd;
+        --accent-soft:   #e8f0ff;
+        --danger:        #c0344a;
+        --danger-soft:   #fdecef;
+
+        --tok-kw:        #8250df;
+        --tok-str:       #0a7d55;
+        --tok-builtin:   #0369a1;
+        --tok-comment:   #6b7280;
+        --tok-fn:        #1a5fd0;
+        --tok-num:       #b45309;
+        --tok-type:      #b0428a;
+
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Source Code Pro", Menlo, monospace;
+
+        --sidebar-w: 16rem;
+        --radius: 8px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg:            #0e1014;
+          --bg-raised:     #15181e;
+          --bg-sunken:     #131415;
+          --bg-code:       #14171d;
+
+          --fg:            #e7e9ee;
+          --fg-muted:      #99a1b0;
+          --fg-faint:      #6b7382;
+
+          --border:        #262b34;
+          --border-strong: #363c47;
+
+          --accent:        #6f9bff;
+          --accent-soft:   #172236;
+          --danger:        #ff8095;
+          --danger-soft:   #2a151a;
+
+          --tok-kw:        #c39bff;
+          --tok-str:       #6ee7a8;
+          --tok-builtin:   #62c0f0;
+          --tok-comment:   #767f8f;
+          --tok-fn:        #8fb4ff;
+          --tok-num:       #f0b072;
+          --tok-type:      #f292c9;
+        }
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+
+      html { -webkit-text-size-adjust: 100%; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .hidden { display: none !important; }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      /* ---------------------------------------------------------------
+         Sidebar
+         --------------------------------------------------------------- */
+      nav {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: var(--sidebar-w);
+        padding: 1.5rem 1.25rem;
+        background: var(--bg-raised);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+      }
+
+      .logo {
+        display: block;
+        color: var(--fg);
+        text-decoration: none;
+        font-family: var(--mono);
+        font-weight: 620;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+      }
+      .logo:hover { text-decoration: none; }
+      .logo:empty::before { content: "API reference"; color: var(--fg-faint); }
+
+      /* The switcher replaces the plain logo when this reference is part of a
+         hub build (see the script at the bottom). */
+      .switcher { position: relative; }
+      .switcher summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+        color: var(--fg);
+        font-family: var(--mono);
+        font-weight: 620;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+        user-select: none;
+      }
+      .switcher summary::-webkit-details-marker { display: none; }
+      .switcher summary::after {
+        content: "";
+        width: 0.45em; height: 0.45em;
+        margin-top: -0.2em;
+        border-right: 1.5px solid var(--fg-faint);
+        border-bottom: 1.5px solid var(--fg-faint);
+        transform: rotate(45deg);
+        transition: transform .12s;
+      }
+      .switcher[open] summary::after { transform: rotate(-135deg); margin-top: 0.2em; }
+      .switcher menu {
+        position: absolute;
+        z-index: 20;
+        left: -0.5rem;
+        top: calc(100% + 0.4rem);
+        min-width: 14rem;
+        margin: 0;
+        padding: 0.35rem;
+        list-style: none;
+        background: var(--bg-raised);
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        box-shadow: 0 10px 32px rgb(0 0 0 / 0.18);
+      }
+      .switcher menu a {
+        display: block;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        color: var(--fg);
+        font-family: var(--mono);
+        font-size: 0.88rem;
+      }
+      .switcher menu a:hover { background: var(--bg-sunken); text-decoration: none; }
+      .switcher menu a.current { color: var(--accent); }
+      .switcher menu .home {
+        font-family: var(--sans);
+        color: var(--fg-muted);
+        border-bottom: 1px solid var(--border);
+        border-radius: 6px 6px 0 0;
+        margin-bottom: 0.25rem;
+      }
+
+      /* Rendered from the module's own doc comment, so it holds markdown. */
+      .tagline {
+        margin: 0.6rem 0 0;
+        color: var(--fg-muted);
+        font-size: 0.8rem;
+        line-height: 1.5;
+      }
+      .tagline p { margin: 0 0 0.5rem; }
+      .tagline p:last-child { margin-bottom: 0; }
+      .tagline code {
+        font-size: 0.9em;
+        padding: 0.05em 0.25em;
+        background: var(--bg-sunken);
+        border-radius: 4px;
+      }
+      /* The module doc is prose, not navigation — links out of it would be
+         noise at this size. */
+      .tagline a { color: inherit; text-decoration: none; }
+
+      .sidebar-meta {
+        margin-top: 1.25rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.78rem;
+        color: var(--fg-faint);
+      }
+      .sidebar-meta a { color: var(--fg-muted); }
+      .sidebar-meta p { margin: 0 0 0.4rem; }
+
+      /* API index, built from the wasm index at load time. */
+      #apiNav { margin-top: 1.5rem; }
+      #apiNav h2 {
+        margin: 1.25rem 0 0.4rem;
+        font-size: 0.68rem;
+        font-weight: 660;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--fg-faint);
+      }
+      #apiNav h2:first-child { margin-top: 0; }
+      #apiNav ul { list-style: none; margin: 0; padding: 0; }
+      #apiNav a {
+        display: block;
+        padding: 0.15rem 0.45rem;
+        border-radius: 5px;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        color: var(--fg-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #apiNav a:hover {
+        background: var(--bg-sunken);
+        color: var(--fg);
+        text-decoration: none;
+      }
+      #apiNav a.current {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      /* Members of a type, indented under it with a guide rule. */
+      #apiNav .members {
+        margin: 0.1rem 0 0.5rem 0.45rem;
+        padding-left: 0.6rem;
+        border-left: 1px solid var(--border);
+      }
+      #apiNav .members a { font-size: 0.78rem; color: var(--fg-faint); }
+
+      /* ---------------------------------------------------------------
+         Header: search + breadcrumb
+         --------------------------------------------------------------- */
+      #navWrap {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        margin-left: var(--sidebar-w);
+        padding: 1rem 2.5rem 0.75rem;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: saturate(180%) blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+
+      #search {
+        width: 100%;
+        max-width: 46rem;
+        padding: 0.55rem 0.85rem;
+        font: inherit;
+        font-size: 0.9rem;
+        color: var(--fg);
+        background: var(--bg-raised);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        outline: none;
+        transition: border-color .12s, box-shadow .12s;
+      }
+      #search::placeholder { color: var(--fg-faint); }
+      #search:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      #sectNav { max-width: 46rem; }
+      #listNav {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.15rem;
+        list-style: none;
+        margin: 0.6rem 0 0;
+        padding: 0;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+      #listNav li + li::before {
+        content: "/";
+        color: var(--fg-faint);
+        margin-right: 0.15rem;
+      }
+      #listNav li a {
+        display: inline-block;
+        padding: 0.15rem 0.35rem;
+        border-radius: 5px;
+        color: var(--fg-muted);
+      }
+      #listNav li a:hover {
+        background: var(--bg-sunken);
+        color: var(--fg);
+        text-decoration: none;
+      }
+      #listNav li a.active { color: var(--fg); font-weight: 600; }
+
+      /* ---------------------------------------------------------------
+         Main column
+         --------------------------------------------------------------- */
+      section {
+        margin-left: var(--sidebar-w);
+        max-width: 60rem;
+        padding: 2rem 2.5rem 6rem;
+      }
+
+      #status {
+        color: var(--fg-muted);
+        font-family: var(--mono);
+        font-size: 0.85rem;
+      }
+
+      /* Upstream puts the *category* ("struct", "Type Function") in the h1 and
+         the declaration's name only in the breadcrumb. `order` promotes the
+         name — injected as a trailing child so main.js's children[0]/[1]
+         indices stay valid — to read first, with the category as a chip. */
+      #hdrName {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+        margin: 0 0 1.5rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+      #hdrDeclName {
+        order: 0;
+        font-family: var(--mono);
+        font-size: 1.6rem;
+        font-weight: 620;
+        letter-spacing: -0.02em;
+      }
+      #hdrDeclName:empty { display: none; }
+      #hdrName > span:first-child {
+        order: 1;
+        font-family: var(--sans);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.5rem;
+        color: var(--fg-muted);
+        background: var(--bg-sunken);
+        border-radius: 999px;
+      }
+      #hdrName a {
+        order: 2;
+        font-family: var(--sans);
+        font-size: 0.72rem;
+        font-weight: 500;
+        padding: 0.15rem 0.5rem;
+        color: var(--fg-muted);
+        background: var(--bg-sunken);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+      }
+      #hdrName a:hover { color: var(--fg); text-decoration: none; }
+
+      section h2 {
+        margin: 2.5rem 0 0.9rem;
+        font-size: 0.76rem;
+        font-weight: 660;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+      }
+
+      /* ---------------------------------------------------------------
+         Code
+         --------------------------------------------------------------- */
+      pre {
+        margin: 0;
+        padding: 0.9rem 1.1rem;
+        overflow-x: auto;
+        background: var(--bg-code);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        line-height: 1.6;
+        tab-size: 4;
+      }
+      code { font-family: var(--mono); font-size: 0.88em; }
+      code a { color: inherit; }
+      code a:hover { color: var(--accent); }
+      :not(pre) > code {
+        white-space: break-spaces;
+        padding: 0.1em 0.35em;
+        background: var(--bg-sunken);
+        border-radius: 4px;
+      }
+
+      #fnProto { margin-bottom: 1.5rem; }
+
+      .source-code {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: start;
+        overflow: hidden;
+        background: var(--bg-code);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      .source-code pre { border: 0; border-radius: 0; background: none; }
+      .source-line-numbers pre {
+        text-align: right;
+        color: var(--fg-faint);
+        user-select: none;
+        padding-right: 0.9rem;
+        border-right: 1px solid var(--border);
+      }
+
+      /* ---------------------------------------------------------------
+         Declaration lists (fields, params, fns, errors)
+         --------------------------------------------------------------- */
+      dl { margin: 0; }
+      dl > div {
+        padding: 0.9rem 1.1rem;
+        margin-top: 0.6rem;
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+      dl > div:first-child { margin-top: 0; }
+      dt { font-family: var(--mono); font-size: 0.88rem; }
+      dd { margin: 0.35rem 0 0; color: var(--fg-muted); }
+      #tableFnErrors dt { font-weight: 620; color: var(--danger); }
+
+      #listFields > div, #listParams > div { margin-bottom: 0.6rem; }
+      .fieldDocs {
+        margin-top: 0.5rem;
+        padding: 0.5rem 0.9rem;
+        color: var(--fg-muted);
+        background: var(--bg-sunken);
+        border-radius: 6px;
+      }
+      /* `Decl.findFirstDocComment` returns the starting token itself when the
+         declaration has no doc comment, so the renderer emits these wrappers
+         unconditionally — an undocumented field or error case leaves an empty
+         box behind. Collapse them instead of rendering a ghost bar. */
+      .fieldDocs:empty, dd:empty { display: none; }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      td, th {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.6rem 0.75rem;
+        max-width: 26rem;
+        overflow-x: hidden;
+        text-overflow: ellipsis;
+        border-bottom: 1px solid var(--border);
+      }
+      td:first-child { font-family: var(--mono); white-space: nowrap; }
+
+      ul.columns {
+        column-width: 16rem;
+        column-gap: 2rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-family: var(--mono);
+        font-size: 0.88rem;
+      }
+      ul.columns li { padding: 0.12rem 0; break-inside: avoid; }
+
+      #listSearchResults {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-family: var(--mono);
+        font-size: 0.9rem;
+      }
+      #listSearchResults li { border-radius: 6px; }
+      #listSearchResults li a { display: block; padding: 0.35rem 0.6rem; color: var(--fg); }
+      #listSearchResults li a:hover { text-decoration: none; }
+      #listSearchResults li.selected { background: var(--accent-soft); }
+      #listSearchResults li.selected a { color: var(--accent); }
+
+      /* ---------------------------------------------------------------
+         Overlays
+         --------------------------------------------------------------- */
+      #helpDialog {
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 22rem;
+        padding: 1.25rem 1.5rem;
+        background: var(--bg-raised);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        box-shadow: 0 16px 48px rgb(0 0 0 / 0.24);
+        z-index: 100;
+      }
+      #helpDialog h1 {
+        margin: 0 0 0.9rem;
+        font-size: 0.76rem;
+        font-weight: 660;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+      }
+      #helpDialog dl {
+        display: flex;
+        align-items: baseline;
+        gap: 0.6rem;
+        padding: 0.25rem 0;
+      }
+      #helpDialog dt, #helpDialog dd { display: inline; margin: 0; }
+      #helpDialog dd { color: var(--fg-muted); font-size: 0.88rem; }
+      kbd {
+        display: inline-block;
+        min-width: 1.7em;
+        padding: 0.15em 0.4em;
+        font: 600 0.78rem var(--mono);
+        text-align: center;
+        color: var(--fg);
+        background: var(--bg-sunken);
+        border: 1px solid var(--border-strong);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+      }
+
+      #errors {
+        position: fixed;
+        left: 0; bottom: 0;
+        width: 100%;
+        max-height: min(20em, 50vh);
+        padding: 1rem 1.5rem;
+        overflow: auto;
+        color: var(--danger);
+        background: var(--danger-soft);
+        border-top: 1px solid var(--danger);
+        z-index: 50;
+      }
+      #errors h1 {
+        margin: 0 0 0.5rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      #errors pre { background: none; border: 0; padding: 0; color: inherit; }
+
+      /* ---------------------------------------------------------------
+         Syntax highlighting (class names come from main.wasm)
+         --------------------------------------------------------------- */
+      .tok-kw      { color: var(--tok-kw); font-weight: 600; }
+      .tok-str     { color: var(--tok-str); }
+      .tok-builtin { color: var(--tok-builtin); }
+      .tok-comment { color: var(--tok-comment); font-style: italic; }
+      .tok-fn      { color: var(--tok-fn); font-weight: 600; }
+      .tok-null    { color: var(--tok-num); }
+      .tok-number  { color: var(--tok-num); }
+      .tok-type    { color: var(--tok-type); }
+
+      /* ---------------------------------------------------------------
+         Narrow screens
+         --------------------------------------------------------------- */
+      @media (max-width: 720px) {
+        nav {
+          position: static;
+          width: auto;
+          padding: 1rem 1.25rem;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        /* The sidebar stacks above the content here, so a full API index
+           would push the page itself off-screen. Search covers it. */
+        .tagline, .sidebar-meta, #apiNav { display: none; }
+        #navWrap { margin-left: 0; padding: 0.75rem 1.25rem 0.6rem; }
+        section { margin-left: 0; padding: 1.5rem 1.25rem 4rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <!-- Name, tagline and index all come from the module's own analysis at
+           load time, so this shell is not specific to any one library. -->
+      <a class="logo" href="#" id="moduleName"></a>
+      <div class="tagline" id="moduleTagline"></div>
+      <div id="apiNav"></div>
+      <div class="sidebar-meta">
+        <p>Press <kbd>s</kbd> to search, <kbd>?</kbd> for shortcuts.</p>
+      </div>
+    </nav>
+
+    <div id="navWrap">
+      <input type="search" id="search" autocomplete="off" spellcheck="false" placeholder="Search declarations…  (press s)">
+      <div id="sectNav" class="hidden"><ul id="listNav"></ul></div>
+    </div>
+
+    <section>
+    <p id="status">Loading…</p>
+    <!-- main.js addresses children[0] (category) and children[1] ([src]) by
+         index, so #hdrDeclName has to stay last. CSS `order` displays it first. -->
+    <h1 id="hdrName" class="hidden"><span></span><a href="#">[src]</a><span id="hdrDeclName"></span></h1>
+    <div id="fnProto" class="hidden">
+      <pre><code id="fnProtoCode"></code></pre>
+    </div>
+    <div id="tldDocs" class="hidden"></div>
+    <div id="sectParams" class="hidden">
+      <h2>Parameters</h2>
+      <div id="listParams">
+      </div>
+    </div>
+    <div id="sectFnErrors" class="hidden">
+      <h2>Errors</h2>
+      <div id="fnErrorsAnyError">
+        <p><span class="tok-type">anyerror</span> means the error set is known only at runtime.</p>
+      </div>
+      <div id="tableFnErrors"><dl id="listFnErrors"></dl></div>
+    </div>
+    <div id="sectSearchResults" class="hidden">
+      <h2>Search Results</h2>
+      <ul id="listSearchResults"></ul>
+    </div>
+    <div id="sectSearchNoResults" class="hidden">
+      <h2>No Results Found</h2>
+      <p>Press escape to exit search and then '?' to see more options.</p>
+    </div>
+    <div id="sectFields" class="hidden">
+      <h2>Fields</h2>
+      <div id="listFields">
+      </div>
+    </div>
+    <div id="sectTypes" class="hidden">
+      <h2>Types</h2>
+      <ul id="listTypes" class="columns">
+      </ul>
+    </div>
+    <div id="sectNamespaces" class="hidden">
+      <h2>Namespaces</h2>
+      <ul id="listNamespaces" class="columns">
+      </ul>
+    </div>
+    <div id="sectGlobalVars" class="hidden">
+      <h2>Global Variables</h2>
+      <table>
+        <tbody id="listGlobalVars">
+        </tbody>
+      </table>
+    </div>
+    <div id="sectValues" class="hidden">
+      <h2>Values</h2>
+      <table>
+        <tbody id="listValues">
+        </tbody>
+      </table>
+    </div>
+    <div id="sectFns" class="hidden">
+      <h2>Functions</h2>
+      <dl id="listFns">
+      </dl>
+    </div>
+    <div id="sectErrSets" class="hidden">
+      <h2>Error Sets</h2>
+      <ul id="listErrSets" class="columns">
+      </ul>
+    </div>
+    <div id="sectDocTests" class="hidden">
+      <h2>Example Usage</h2>
+      <pre><code id="docTestsCode"></code></pre>
+    </div>
+    <div id="sectSource" class="hidden">
+      <h2>Source Code</h2>
+      <div class="source-code">
+        <div class="source-line-numbers">
+          <pre><code id="sourceLineNumbers"></code></pre>
+        </div>
+        <div class="source-text">
+          <pre><code id="sourceText"></code></pre>
+        </div>
+      </div>
+    </div>
+    </section>
+
+    <div id="helpDialog" class="hidden">
+      <h1>Keyboard Shortcuts</h1>
+      <dl><dt><kbd>?</kbd></dt><dd>Show this help dialog</dd></dl>
+      <dl><dt><kbd>Esc</kbd></dt><dd>Clear focus; close this dialog</dd></dl>
+      <dl><dt><kbd>s</kbd></dt><dd>Focus the search field</dd></dl>
+      <dl><dt><kbd>u</kbd></dt><dd>Go to source code</dd></dl>
+      <dl><dt><kbd>↑</kbd></dt><dd>Move up in search results</dd></dl>
+      <dl><dt><kbd>↓</kbd></dt><dd>Move down in search results</dd></dl>
+      <dl><dt><kbd>⏎</kbd></dt><dd>Go to active search result</dd></dl>
+    </div>
+    <div id="errors" class="hidden">
+      <h1>Errors</h1>
+      <pre id="errorsText"></pre>
+    </div>
+    <script src="main.js"></script>
+    <!-- Generated by the build; see publr_tools/build.zig. -->
+    <script src="docs-config.js"></script>
+    <script>
+      // --------------------------------------------------------------------
+      // Header: show the declaration's name, not just its category.
+      //
+      // The renderer only ever writes the *category* into the h1 ("struct",
+      // "Type Function"), leaving the name to the breadcrumb — so most pages
+      // are headed by a bare "struct". The breadcrumb's last entry is the
+      // current declaration; mirror it into the header.
+      // --------------------------------------------------------------------
+      const declName = document.getElementById("hdrDeclName");
+      const breadcrumb = document.getElementById("listNav");
+      new MutationObserver(() => {
+        rewriteBreadcrumb();
+        const current = breadcrumb.lastElementChild;
+        declName.textContent = current ? current.textContent.trim() : "";
+      }).observe(breadcrumb, { childList: true, subtree: true, characterData: true });
+
+      // --------------------------------------------------------------------
+      // Public paths.
+      //
+      // The docs are built from the amalgamation, in which every source file
+      // is a namespace. The renderer names every declaration by where it is
+      // *defined*, so the page for `Response.text` is
+      // `publr_http.response_module.Response.text` — true, and not what a
+      // reader writes. The sidebar walk below records, for everything
+      // reachable from the root, the path a consumer actually uses; the
+      // breadcrumb and search results are rewritten from it, and search
+      // entries with no public path are hidden.
+      // --------------------------------------------------------------------
+      const publicPaths = new Map(); // definition fqn or alias fqn -> { names, fqns }
+
+      function rewriteBreadcrumb() {
+        const crumbs = Array.from(breadcrumb.children);
+        if (crumbs.length < 2 || breadcrumb.dataset.rewritten === location.hash) return;
+        const last = crumbs[crumbs.length - 1].querySelector("a");
+        const entry = last && publicPaths.get(decodeURIComponent(last.getAttribute("href").slice(1)));
+        if (!entry) return;
+        breadcrumb.dataset.rewritten = location.hash;
+        const module = crumbs[0];
+        breadcrumb.replaceChildren(module);
+        entry.names.forEach((name, index) => {
+          const item = document.createElement("li");
+          const anchor = document.createElement("a");
+          anchor.textContent = name;
+          anchor.href = "#" + entry.fqns[index];
+          if (index === entry.names.length - 1) anchor.classList.add("active");
+          item.append(anchor);
+          breadcrumb.append(item);
+        });
+      }
+
+      const searchResults = document.getElementById("listSearchResults");
+      new MutationObserver(() => {
+        const shown = new Set();
+        for (const item of searchResults.children) {
+          const anchor = item.querySelector("a");
+          if (!anchor) continue;
+          const fqn = decodeURIComponent(anchor.getAttribute("href").slice(1));
+          const entry = publicPaths.get(fqn);
+          const label = entry ? entry.names.join(".") : null;
+          const hide = !entry || shown.has(label);
+          item.style.display = hide ? "none" : "";
+          if (entry) {
+            anchor.textContent = label;
+            shown.add(label);
+          }
+        }
+      }).observe(searchResults, { childList: true });
+
+      // --------------------------------------------------------------------
+      // Links into std.
+      //
+      // `sources.tar` is trimmed to this module (tools/trim_sources.zig), so
+      // std is deliberately not indexed. The renderer still linkifies std
+      // paths it sees in a signature — `read(…, arena: std.mem.Allocator)` —
+      // straight from the syntax, without checking the target resolves, so
+      // those anchors would land on "Declaration not found". Send them
+      // upstream instead. The version is stamped into docs-config.js by the
+      // build, from the toolchain that produced these docs.
+      // --------------------------------------------------------------------
+      const ZIG_STD_DOCS = window.PUBLR_DOCS?.zigStdDocs ??
+        "https://ziglang.org/documentation/master/std/";
+      document.addEventListener("click", (event) => {
+        const anchor = event.target.closest('a[href^="#std."], a[href^="#builtin."]');
+        if (!anchor) return;
+        event.preventDefault();
+        window.open(ZIG_STD_DOCS + anchor.getAttribute("href"), "_blank", "noopener");
+      });
+
+      // --------------------------------------------------------------------
+      // Sidebar: a persistent API index.
+      //
+      // Upstream has no such nav — the only way to see everything is to land
+      // on the module root. main.js publishes the wasm instance as
+      // `window.wasm` ("for debugging"), and the index it exposes is the same
+      // one the main column is rendered from, so the sidebar is built from the
+      // real analysis rather than a hand-maintained duplicate. Categories and
+      // alias resolution mirror main.js's own member loop exactly; if a future
+      // toolchain changes those, this degrades to an empty sidebar rather than
+      // a wrong one.
+      // --------------------------------------------------------------------
+      const CAT = {
+        namespace: 0, container: 1, global_variable: 2, function: 3,
+        primitive: 4, error_set: 5, global_const: 6, alias: 7,
+        type: 8, type_type: 9, type_function: 10,
+      };
+      // Section order in the sidebar; each maps the categories it collects.
+      const SECTIONS = [
+        ["Types", [CAT.container, CAT.type, CAT.type_type, CAT.type_function]],
+        ["Namespaces", [CAT.namespace]],
+        ["Error sets", [CAT.error_set]],
+        ["Functions", [CAT.function]],
+        ["Values", [CAT.global_const, CAT.primitive]],
+        ["Variables", [CAT.global_variable]],
+      ];
+      // Kinds that can hold declarations of their own, and so are worth
+      // expanding one level in the index. `namespace_members` is a scan for
+      // `parent == decl`, so asking a leaf is safe but pointless.
+      const NESTABLE = [
+        CAT.container, CAT.namespace, CAT.type, CAT.type_type, CAT.type_function,
+      ];
+
+      const apiNav = document.getElementById("apiNav");
+
+      function buildApiNav(exports) {
+        const decoder = new TextDecoder();
+        // Every view has to be taken fresh: a wasm call can grow the memory
+        // and detach any buffer captured earlier.
+        const str = (packed) => {
+          const ptr = Number(packed & 0xffffffffn);
+          const len = Number(packed >> 32n);
+          if (len === 0) return "";
+          return decoder.decode(new Uint8Array(exports.memory.buffer, ptr, len));
+        };
+        const slice = (packed) => {
+          const ptr = Number(packed & 0xffffffffn);
+          const len = Number(packed >> 32n);
+          if (len === 0) return [];
+          return Array.from(new Uint32Array(exports.memory.buffer, ptr, len));
+        };
+
+        // Returns null rather than throwing on an unknown category, so one
+        // unfamiliar declaration cannot take the whole sidebar down.
+        const resolve = (decl) => {
+          for (let hops = 0; hops < 16; hops += 1) {
+            const category = exports.categorize_decl(decl, 0);
+            if (category !== CAT.alias) return { decl, category };
+            decl = exports.get_aliasee();
+          }
+          return null;
+        };
+
+        const collect = (parent) =>
+          slice(exports.namespace_members(parent, false))
+            .map((member) => {
+              const resolved = resolve(member);
+              // Label from the original declaration, target from the alias's
+              // destination — the same split main.js uses.
+              return resolved && { name: str(exports.decl_name(member)), ...resolved };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        const link = (entry) => {
+          const anchor = document.createElement("a");
+          anchor.textContent = entry.name;
+          anchor.href = "#" + str(exports.decl_fqn(entry.decl));
+          return anchor;
+        };
+
+        const root = exports.find_module_root(0);
+        const members = collect(root);
+        const fragment = document.createDocumentFragment();
+
+        // Record public paths for everything reachable from the root, four
+        // levels deep (`extensions.websocket.State.upgrade`), keyed by both
+        // the definition's fqn and the alias's, since search lists both.
+        const rawMembers = (decl, category) =>
+          slice(category === CAT.type_function
+            ? exports.type_fn_members(decl, false)
+            : exports.namespace_members(decl, false));
+        const record = (names, fqns, aliasDecl, resolved) => {
+          const entry = { names, fqns };
+          publicPaths.set(str(exports.decl_fqn(aliasDecl)), entry);
+          publicPaths.set(fqns[fqns.length - 1], entry);
+        };
+        const walkPublic = (aliasDecl, names, fqns, depth) => {
+          const resolved = resolve(aliasDecl);
+          if (!resolved) return;
+          const fqn = str(exports.decl_fqn(resolved.decl));
+          const path = names.concat(str(exports.decl_name(aliasDecl)));
+          const targets = fqns.concat(fqn);
+          record(path, targets, aliasDecl, resolved);
+          if (depth === 0 || !NESTABLE.includes(resolved.category)) return;
+          for (const member of rawMembers(resolved.decl, resolved.category)) {
+            walkPublic(member, path, targets, depth - 1);
+          }
+        };
+        for (const member of rawMembers(root, CAT.namespace)) walkPublic(member, [], [], 3);
+        rewriteBreadcrumb();
+
+        for (const [title, categories] of SECTIONS) {
+          const entries = members.filter((m) => categories.includes(m.category));
+          if (entries.length === 0) continue;
+
+          const heading = document.createElement("h2");
+          heading.textContent = title;
+          fragment.append(heading);
+
+          const list = document.createElement("ul");
+          for (const entry of entries) {
+            const item = document.createElement("li");
+            item.append(link(entry));
+
+            // One level of nesting: a type's or namespace's own functions,
+            // which is what makes the index worth having. Deeper would not
+            // fit the column.
+            const methods = NESTABLE.includes(entry.category)
+              ? collect(entry.decl).filter((m) => m.category === CAT.function)
+              : [];
+            if (methods.length !== 0) {
+              const sublist = document.createElement("ul");
+              sublist.className = "members";
+              for (const method of methods) {
+                const subitem = document.createElement("li");
+                subitem.append(link(method));
+                sublist.append(subitem);
+              }
+              item.append(sublist);
+            }
+            list.append(item);
+          }
+          fragment.append(list);
+        }
+
+        apiNav.replaceChildren(fragment);
+
+        // Identity, from the module itself rather than from configuration:
+        // the name it is imported under, and its own first doc paragraph.
+        const name = str(exports.module_name(0));
+        document.getElementById("moduleName").textContent = name;
+        document.title = name + " — API reference";
+        attachSwitcher(name);
+        document.getElementById("moduleTagline").innerHTML =
+          str(exports.decl_docs_html(root, true));
+      }
+
+      // --------------------------------------------------------------------
+      // Library switcher, hub builds only.
+      //
+      // A workspace `zig build docs` lays every library's reference side by
+      // side with a `hub.json` at the site root (see build.zig, `hub`). When
+      // that file is there, the module name becomes a menu of the libraries
+      // plus a way back to the home page. A standalone build has no such
+      // file; the fetch 404s quietly and the plain name stays.
+      // --------------------------------------------------------------------
+      function attachSwitcher(current) {
+        fetch("../hub.json", { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((hub) => {
+            if (!hub || !Array.isArray(hub.packages)) return;
+            const logo = document.getElementById("moduleName");
+            const details = document.createElement("details");
+            details.className = "switcher";
+            const summary = document.createElement("summary");
+            summary.textContent = current;
+            const menu = document.createElement("menu");
+            const home = document.createElement("li");
+            const homeLink = document.createElement("a");
+            homeLink.className = "home";
+            homeLink.href = "../";
+            homeLink.textContent = "All libraries";
+            home.append(homeLink);
+            menu.append(home);
+            for (const entry of hub.packages) {
+              const item = document.createElement("li");
+              const link = document.createElement("a");
+              link.href = "../" + entry.name + "/";
+              link.textContent = entry.name;
+              if (entry.name === current) link.classList.add("current");
+              item.append(link);
+              menu.append(item);
+            }
+            details.append(summary, menu);
+            logo.replaceWith(details);
+            document.addEventListener("click", (event) => {
+              if (!details.contains(event.target)) details.removeAttribute("open");
+            });
+          })
+          .catch(() => {});
+      }
+
+      function highlightCurrent() {
+        // The hash carries a `?query` suffix while searching; ignore it.
+        const current = location.hash.split("?")[0];
+        for (const anchor of apiNav.querySelectorAll("a")) {
+          anchor.classList.toggle("current", anchor.getAttribute("href") === current);
+        }
+      }
+
+      // main.js instantiates the wasm and only later unpacks sources.tar, and
+      // exposes no signal for either. `module_name` is bounds-checked and
+      // returns "" until the modules are registered, so it is safe to poll.
+      (function waitForIndex(attempt = 0) {
+        const exports = window.wasm?.instance?.exports;
+        let ready = false;
+        try {
+          ready = !!exports && Number(exports.module_name(0) >> 32n) > 0;
+        } catch {
+          ready = false;
+        }
+        if (ready) {
+          try {
+            buildApiNav(exports);
+            highlightCurrent();
+            window.addEventListener("hashchange", highlightCurrent);
+          } catch (error) {
+            console.warn("sidebar index unavailable:", error);
+          }
+          return;
+        }
+        if (attempt < 200) setTimeout(() => waitForIndex(attempt + 1), 50);
+      })();
+    </script>
+  </body>
+</html>

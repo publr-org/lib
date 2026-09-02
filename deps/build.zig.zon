@@ -1,0 +1,15 @@
+.{
+    .name = .publr_deps,
+    .version = "0.1.0",
+    .fingerprint = 0x91ed2e1c15393c3e,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .publr_sqlite = .{ .path = "../sqlite" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+    },
+}

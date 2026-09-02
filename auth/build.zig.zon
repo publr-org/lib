@@ -1,0 +1,17 @@
+.{
+    .name = .publr_auth,
+    .version = "0.1.0",
+    .fingerprint = 0x541c71b6226c31a9,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // Build-time only: supplies the amalgamation and the `docs` step. Ships
+        // nothing into the library itself, so consumers of publr_auth never see it.
+        .publr_tools = .{ .path = "../tools" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build",
+        "src",
+    },
+}

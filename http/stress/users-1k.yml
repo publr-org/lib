@@ -1,0 +1,42 @@
+# One-worker-per-few-users profile, for very wide Lambda fleets (--count ~950).
+#
+# Each worker hosts at most 16 paced users (think time ~10 req/s each), so a worker sits
+# near idle and the measured percentiles are pure server + network. At 950 workers this is
+# ~15,000 independent users and ~150k req/s aggregate:
+#
+#   artillery run --platform aws:lambda \
+#     --platform-opt region=us-east-1 --platform-opt memory-size=1024 \
+#     --count 950 -t http://<server>:8090 stress/users-1k.yml
+#
+# Lambda quota note: the account allows 1000 concurrent executions; 950 leaves headroom.
+# Approximate cost per run: ~4-5 USD (950 workers x 1 GB x ~4 minutes).
+config:
+  target: http://127.0.0.1:8090
+  http:
+    timeout: 10
+  phases:
+    - duration: 20
+      arrivalRate: 1
+      maxVusers: 16
+      name: Fill
+    - duration: 180
+      arrivalRate: 1
+      maxVusers: 16
+      name: 10 req/s per user, sustained
+  plugins:
+    ensure:
+      thresholds:
+        - http.response_time.p95: 15
+        - http.response_time.p99: 50
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+
+scenarios:
+  - name: Paced user
+    flow:
+      - loop:
+          - get:
+              url: '/health'
+          - think: 0.1
+        count: 600

@@ -1,0 +1,14 @@
+.{
+    .name = .publr_tools,
+    .version = "0.1.0",
+    .fingerprint = 0xdae3e35f37b90526,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "shell",
+        "tools",
+        "README.md",
+    },
+}

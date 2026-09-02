@@ -1,0 +1,52 @@
+# Remote peak profile: throughput testing across a real network, where round-trip time
+# dominates. Closed-loop law: offered req/s = in-flight requests / RTT, and each virtual
+# user holds exactly one request in flight. So this profile's job is concurrency, lots of
+# it, and sessions short enough that user slots recycle even when one request takes 200ms.
+#
+#   artillery run --count 4 -t http://<server>:8090 stress/peak-remote.yml
+#
+# Sizing math (adjust maxVusers/--count to taste):
+#   in-flight = --count x maxVusers        (4 x 3000 = 12,000 below)
+#   offered   = in-flight / RTT            (12,000 / 0.18s = ~66k req/s at 180ms)
+#
+# Client-side walls arrive before server-side ones in this setup, know them:
+#   - the artillery fleet itself caps around 50-80k req/s on a laptop-class machine
+#   - wire cost is ~250 bytes per request round trip: 60k req/s = ~120 Mbit/s sustained,
+#     which a home uplink may refuse before node does
+#   - the OS needs headroom for 12k sockets: raise `ulimit -n` to 65536 first
+#
+# Latency percentiles from this profile are your network path, not the server (min
+# response time = your RTT, read it as a free ping). Latency thresholds are therefore
+# deliberately absent from ensure; failures are the only meaningful gate. For the
+# server's true ceiling, run the load generator in the same datacenter instead: at
+# sub-millisecond RTT a few hundred vusers saturate anything, so plain peak.yml works.
+config:
+  target: http://143.198.142.123
+  http:
+    timeout: 10
+  phases:
+    - duration: 30
+      arrivalRate: 50
+      maxVusers: 250
+      name: Warm up
+    - duration: 30
+      arrivalRate: 100
+      maxVusers: 1000
+      name: Ramp concurrency
+    - duration: 120
+      arrivalRate: 200
+      maxVusers: 3000
+      name: Hold peak in-flight
+  plugins:
+    ensure:
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+
+scenarios:
+  - name: Hammer health
+    flow:
+      - loop:
+          - get:
+              url: '/health'
+        count: 100

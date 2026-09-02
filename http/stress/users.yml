@@ -1,0 +1,45 @@
+# Realistic-users profile: honest latency percentiles at high aggregate rate.
+#
+# Each virtual user paces itself with think time (~10 req/s per user), so the worker
+# hosting it stays far below CPU saturation and the measured p95/p99 reflect the server
+# and network, not the load generator's own event-loop queue. This is the cheap, correct
+# alternative to "one Lambda per user": 150 workers x 100 paced users = 15,000 users and
+# ~150k req/s aggregate.
+#
+#   artillery run --platform aws:lambda \
+#     --platform-opt region=us-east-1 --platform-opt memory-size=1024 \
+#     --count 150 -t http://<server>:8090 stress/users.yml
+#
+# The ensure thresholds are meaningful in this profile (they were not in the saturated
+# fleet profiles): in-region RTT is ~1-3 ms, so p95 over 15 ms or p99 over 50 ms means
+# real queueing somewhere. vusers.failed must stay zero.
+config:
+  target: http://127.0.0.1:8090
+  http:
+    timeout: 10
+  phases:
+    - duration: 30
+      arrivalRate: 5
+      maxVusers: 100
+      name: Fill to 100 users per worker
+    - duration: 180
+      arrivalRate: 5
+      maxVusers: 100
+      name: 10 req/s per user, sustained
+  plugins:
+    ensure:
+      thresholds:
+        - http.response_time.p95: 15
+        - http.response_time.p99: 50
+      conditions:
+        - expression: vusers.failed == 0
+          strict: true
+
+scenarios:
+  - name: Paced user
+    flow:
+      - loop:
+          - get:
+              url: '/health'
+          - think: 0.1
+        count: 600

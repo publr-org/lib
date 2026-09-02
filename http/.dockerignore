@@ -1,0 +1,6 @@
+.git
+zig-out
+.zig-cache
+zig-cache
+docs
+stress
