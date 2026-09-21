@@ -44,6 +44,17 @@ pub const State = struct {
     /// const id = cookie_value(req.header("cookie"), auth.State.cookie_name);
     /// ```
     pub const cookie_name = cookie_name_for(build_options.cookie_prefix);
+    /// `cookie_name` under the `__Host-` prefix, for production: a browser then
+    /// refuses to store the cookie unless it is `Secure`, has `Path=/` and no
+    /// `Domain`, so it can only be set over TLS and only by this host, never by
+    /// a sibling subdomain. Set the cookie under this name when serving over
+    /// TLS; keep `cookie_name` for plain-HTTP development, where browsers
+    /// would drop the `__Host-` form.
+    ///
+    /// ```zig
+    /// const name = if (site.tls) auth.State.secure_cookie_name else auth.State.cookie_name;
+    /// ```
+    pub const secure_cookie_name = "__Host-" ++ cookie_name;
 
     pub const Options = struct {
         /// The argon2 cost; `password.params_test` for a test suite.
@@ -65,7 +76,8 @@ pub const State = struct {
 
         state.scratch = std.heap.FixedBufferAllocator.init(state.scratch_buffer);
         io.randomSecure(&state.secret) catch return error.EntropyUnavailable;
-        state.throttle = .{ .secret = state.secret };
+        state.throttle = .{};
+        std.crypto.auth.hmac.sha2.HmacSha256.create(&state.throttle.secret, "throttle", &state.secret);
 
         var dummy_password: [32]u8 = undefined;
         io.random(&dummy_password);
@@ -181,6 +193,7 @@ test "the session cookie is publr_session, optionally prefixed by the build" {
     try std.testing.expectEqualStrings("publr_session", cookie_name_for(""));
     try std.testing.expectEqualStrings("tyik_publr_session", cookie_name_for("tyik"));
     try std.testing.expect(std.mem.endsWith(u8, State.cookie_name, State.session_cookie));
+    try std.testing.expectEqualStrings("__Host-" ++ State.cookie_name, State.secure_cookie_name);
 
     try std.testing.expect(cookie_prefix_valid("mini-cms-auth"));
     try std.testing.expect(!cookie_prefix_valid("has space"));

@@ -7,9 +7,10 @@ const std = @import("std");
 
 const argon2 = std.crypto.pwhash.argon2;
 
-/// Shortest password `hash` accepts; shorter is `error.WeakPassword`.
+/// Shortest password `hash` accepts, in characters (Unicode code points);
+/// shorter, or not UTF-8, is `error.WeakPassword`.
 pub const len_min: u32 = 8;
-/// Longest password `hash` and `verify` accept.
+/// Longest password `hash` and `verify` accept, in bytes.
 pub const len_max: u32 = 256;
 /// Longest encoded hash `hash` produces — the size of the buffer it writes into,
 /// and what a `password_hash` column needs.
@@ -59,7 +60,11 @@ pub fn hash(
     std.debug.assert(params.m >= 8);
     std.debug.assert(params.m <= m_max);
 
-    if (plain.len < len_min or plain.len > len_max) {
+    if (plain.len > len_max) {
+        return error.WeakPassword;
+    }
+    const characters = std.unicode.utf8CountCodepoints(plain) catch return error.WeakPassword;
+    if (characters < len_min) {
         return error.WeakPassword;
     }
 

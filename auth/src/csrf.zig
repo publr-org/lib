@@ -90,6 +90,49 @@ pub fn origin_of(host: ?[]const u8, origin: ?[]const u8, referer: ?[]const u8) O
     return if (std.ascii.eqlIgnoreCase(source_host, served)) .same else .foreign;
 }
 
+/// Classifies a request against the origins the site is actually served at,
+/// each `scheme://host[:port]`, e.g. `"https://app.example.com"`. Stricter than
+/// `origin_of`, for production: the scheme counts, so an `http://` page cannot
+/// write to an `https://` site, and a proxy or client that rewrites `Host`
+/// moves nothing, because `Host` is not consulted. `.absent` means what it
+/// does in `origin_of`.
+///
+/// ```zig
+/// const allowed = [_][]const u8{site.public_origin};
+/// switch (auth.csrf.origin_in(&allowed, req.header("origin"), req.header("referer"))) {
+///     .foreign => return res.text(.forbidden, "cross-site request refused"),
+///     .same, .absent => {},
+/// }
+/// ```
+pub fn origin_in(allowed: []const []const u8, origin: ?[]const u8, referer: ?[]const u8) Origin {
+    std.debug.assert(allowed.len > 0);
+
+    const source = origin orelse referer orelse return .absent;
+
+    std.debug.assert(source.len <= header_len_max);
+
+    const source_origin = origin_prefix_of(source) orelse return .foreign;
+
+    for (allowed) |candidate| {
+        if (std.ascii.eqlIgnoreCase(candidate, source_origin)) {
+            return .same;
+        }
+    }
+
+    return .foreign;
+}
+
+/// The `scheme://host[:port]` of a URL, or null when it has no scheme or host.
+fn origin_prefix_of(url: []const u8) ?[]const u8 {
+    const scheme_end = std.mem.indexOf(u8, url, "://") orelse return null;
+    const host = host_of(url) orelse return null;
+    const end = scheme_end + 3 + host.len;
+
+    std.debug.assert(end <= url.len);
+
+    return url[0..end];
+}
+
 fn host_of(url: []const u8) ?[]const u8 {
     std.debug.assert(host_len_max > 0);
 
@@ -136,4 +179,19 @@ test "origin: same host passes, foreign host fails, no origin is absent" {
     try std.testing.expectEqual(Origin.foreign, origin_of(host, "http://evil.test", "http://localhost:8080"));
     try std.testing.expectEqual(Origin.foreign, origin_of(null, "http://localhost:8080", null));
     try std.testing.expectEqual(Origin.absent, origin_of(host, null, null));
+}
+
+test "origin_in: only the listed scheme and host pass, whatever Host says" {
+    try std.testing.expectEqualStrings("https://example.com", origin_prefix_of("https://example.com/a?b").?);
+    try std.testing.expectEqualStrings("http://localhost:8080", origin_prefix_of("http://localhost:8080").?);
+    try std.testing.expect(origin_prefix_of("null") == null);
+    try std.testing.expect(origin_prefix_of("https://") == null);
+
+    const allowed = [_][]const u8{ "https://app.example.com", "https://example.com" };
+    try std.testing.expectEqual(Origin.same, origin_in(&allowed, "https://app.example.com", null));
+    try std.testing.expectEqual(Origin.same, origin_in(&allowed, null, "https://EXAMPLE.com/admin/x"));
+    try std.testing.expectEqual(Origin.foreign, origin_in(&allowed, "http://app.example.com", null));
+    try std.testing.expectEqual(Origin.foreign, origin_in(&allowed, "https://evil.example.com", null));
+    try std.testing.expectEqual(Origin.foreign, origin_in(&allowed, "null", null));
+    try std.testing.expectEqual(Origin.absent, origin_in(&allowed, null, null));
 }

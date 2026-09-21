@@ -48,7 +48,15 @@ throttling, CSRF, origin — with the policy left out: no users table, no sessio
 store. A consumer brings those and calls four things. The one name the library
 does own is the session cookie's — `State.cookie_name`: `publr_session`, or
 `<prefix>_publr_session` when the app builds the dependency with
-`.cookie_prefix = "<prefix>"` — so every Publr app agrees on it.
+`.cookie_prefix = "<prefix>"` — so every Publr app agrees on it. In production
+the same name goes under `__Host-` (`State.secure_cookie_name`), which makes
+the browser enforce `Secure`, `Path=/` and host scoping.
+
+Two of the mechanisms come at two strengths, because what protects a deployment
+is only friction on a developer's laptop: the cookie name above, and the origin
+check — `csrf.origin_of` compares the request's `Host` (plain HTTP, any port),
+`csrf.origin_in` compares scheme and host against the origins the site is
+really served at. The consumer picks by mode.
 
 ## The contract
 
@@ -95,8 +103,9 @@ function takes plain optional strings so it is usable with any HTTP layer.
   table are shared by everything that signs in, unsynchronized, which matches a
   single-threaded server.
 - No session store, no user model. Those are the consumer's tables; the library
-  only names the cookie (`State.cookie_name`, from the build option) and
-  validates nothing about what is stored under it.
+  only names the cookie (`State.cookie_name` and its `__Host-` form
+  `State.secure_cookie_name`, from the build option) and validates nothing
+  about what is stored under it.
 - argon2 parameters are fixed at `init`; changing them means a new `State`.
 
 ## Tests and docs

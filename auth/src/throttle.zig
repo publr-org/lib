@@ -28,8 +28,11 @@ const delays_ms = [_]i64{ 60_000, 300_000, 900_000, 3_600_000 };
 /// ```
 pub const Throttle = struct {
     /// Subjects the table tracks at once. One more and the least recently
-    /// touched subject is forgotten — which is a reset, never a lockout.
-    pub const slots_max: u32 = 256;
+    /// touched subject that is not currently blocked is forgotten — a reset,
+    /// never a lockout. A blocked subject is never evicted, so flooding the
+    /// table with junk subjects cannot lift a delay; when every slot is
+    /// blocked, a new subject is refused until the soonest delay ends.
+    pub const slots_max: u32 = 1024;
     /// Failures a subject gets before the first delay.
     pub const failures_free: u8 = 4;
     /// The failure count saturates here; the delay is already at its longest.
@@ -94,7 +97,7 @@ pub const Throttle = struct {
         std.debug.assert(key != 0);
         std.debug.assert(now_ms >= 0);
 
-        const slot = throttle.claim(key, now_ms);
+        const slot = throttle.claim(key, now_ms) orelse return throttle.soonest_release_ms(now_ms);
 
         if (slot.failures < failures_max) {
             slot.failures += 1;
@@ -150,32 +153,87 @@ pub const Throttle = struct {
         return null;
     }
 
-    fn claim(throttle: *Throttle, key: u64, now_ms: i64) *Slot {
+    /// The subject's slot, claiming one when it has none: a free slot, else
+    /// the least recently touched slot that is not blocked. Null when every
+    /// slot is blocked — the table is full of subjects still serving a delay,
+    /// and none of them may be forgotten to make room.
+    fn claim(throttle: *Throttle, key: u64, now_ms: i64) ?*Slot {
         std.debug.assert(key != 0);
 
         if (throttle.find_mut(key)) |slot| {
             return slot;
         }
 
-        var victim: *Slot = &throttle.slots[0];
+        var victim: ?*Slot = null;
 
         for (&throttle.slots) |*slot| {
             if (slot.key == 0) {
                 victim = slot;
                 break;
             }
-            if (slot.touched_ms < victim.touched_ms) {
+            if (slot.blocked_until_ms > now_ms) {
+                continue;
+            }
+            if (victim == null or slot.touched_ms < victim.?.touched_ms) {
                 victim = slot;
             }
         }
 
-        std.debug.assert(victim.key == 0 or victim.touched_ms <= now_ms);
+        const slot = victim orelse return null;
 
-        victim.* = .{ .key = key, .touched_ms = now_ms };
+        std.debug.assert(slot.key == 0 or slot.touched_ms <= now_ms);
 
-        return victim;
+        slot.* = .{ .key = key, .touched_ms = now_ms };
+
+        return slot;
+    }
+
+    /// How long until the first blocked slot frees — the delay a subject gets
+    /// when the table has no room for it. Only called when every slot is
+    /// blocked, so the result is always positive.
+    fn soonest_release_ms(throttle: *const Throttle, now_ms: i64) i64 {
+        var soonest: i64 = std.math.maxInt(i64);
+
+        for (&throttle.slots) |*slot| {
+            std.debug.assert(slot.blocked_until_ms > now_ms);
+            soonest = @min(soonest, slot.blocked_until_ms);
+        }
+
+        std.debug.assert(soonest > now_ms);
+
+        return soonest - now_ms;
     }
 };
+
+test "a blocked subject survives a flood of new subjects; a full table refuses" {
+    var throttle: Throttle = .{};
+    throttle.secret = @splat(9);
+    const victim = throttle.key_for("victim@example.com");
+
+    var index: u32 = 0;
+    var delay: i64 = 0;
+    while (index <= Throttle.failures_free) : (index += 1) {
+        delay = throttle.record_failure(victim, 1000);
+    }
+    try std.testing.expect(delay > 0);
+
+    // More junk subjects than the table holds, all touched later than the victim.
+    var junk: u32 = 0;
+    while (junk < Throttle.slots_max * 2) : (junk += 1) {
+        var name: [24]u8 = undefined;
+        const subject = std.fmt.bufPrint(&name, "junk{d}", .{junk}) catch unreachable;
+        _ = throttle.record_failure(throttle.key_for(subject), 2000);
+    }
+
+    try std.testing.expectEqual(delay - 1000, throttle.wait_ms(victim, 2000));
+
+    // Block every slot, then a new subject is refused for as long as the soonest block.
+    for (&throttle.slots) |*slot| {
+        slot.* = .{ .key = 1, .failures = Throttle.failures_free + 1, .blocked_until_ms = 5000, .touched_ms = 3000 };
+    }
+    try std.testing.expectEqual(@as(i64, 2000), throttle.record_failure(throttle.key_for("late"), 3000));
+    try std.testing.expectEqual(@as(i64, 0), throttle.wait_ms(throttle.key_for("late"), 3000));
+}
 
 test "first four failures are free, then delays grow and a success clears" {
     var throttle: Throttle = .{};
