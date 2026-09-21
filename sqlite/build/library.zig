@@ -34,6 +34,16 @@ pub fn build(b: *std.Build) *std.Build.Module {
             "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
             "-DSQLITE_USE_ALLOCA=1",
             "-DSQLITE_TEMP_STORE=2",
+            // Hardening: files the engine creates are private to the process
+            // owner, schemas are never trusted to run functions, foreign keys
+            // are enforced as declared, and one value, one statement and one
+            // statement's parameters are bounded well below the engine's caps.
+            "-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600",
+            "-DSQLITE_TRUSTED_SCHEMA=0",
+            "-DSQLITE_DEFAULT_FOREIGN_KEYS=1",
+            "-DSQLITE_MAX_LENGTH=67108864",
+            "-DSQLITE_MAX_SQL_LENGTH=1048576",
+            "-DSQLITE_MAX_VARIABLE_NUMBER=999",
         },
     });
 

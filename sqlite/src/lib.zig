@@ -44,6 +44,7 @@ const done: c_int = 101; // SQLITE_DONE
 const busy: c_int = 5; // SQLITE_BUSY
 const locked: c_int = 6; // SQLITE_LOCKED
 const nomem: c_int = 7; // SQLITE_NOMEM
+const dbconfig_defensive: c_int = 1010; // SQLITE_DBCONFIG_DEFENSIVE
 const readonly: c_int = 8; // SQLITE_READONLY
 const constraint: c_int = 19; // SQLITE_CONSTRAINT
 const misuse: c_int = 21; // SQLITE_MISUSE
@@ -78,6 +79,8 @@ extern fn sqlite3_open_v2(
 ) c_int;
 extern fn sqlite3_close(db: ?*DbHandle) c_int;
 extern fn sqlite3_busy_timeout(db: ?*DbHandle, ms: c_int) c_int;
+extern fn sqlite3_db_config(db: ?*DbHandle, op: c_int, ...) c_int;
+extern fn sqlite3_errcode(db: ?*DbHandle) c_int;
 extern fn sqlite3_errmsg(db: ?*DbHandle) [*:0]const u8;
 extern fn sqlite3_exec(
     db: ?*DbHandle,
@@ -342,6 +345,11 @@ pub const Database = struct {
             return error.Sqlite;
         }
 
+        // Defensive mode: no writes to the schema or the internal tables
+        // through SQL, so a hostile image or statement cannot corrupt the
+        // engine's own structures.
+        _ = sqlite3_db_config(handle, dbconfig_defensive, @as(c_int, 1), @as(?*c_int, null));
+
         runtime.open_count += 1;
 
         const timeout: c_int = @intCast(options.busy_timeout_ms);
@@ -547,9 +555,7 @@ pub const Database = struct {
 
         defer sqlite3_free(data);
 
-        std.debug.assert(size <= std.math.maxInt(u32));
-
-        const len: u32 = @intCast(size);
+        const len: usize = @intCast(size);
         return arena.dupe(u8, data.?[0..len]) catch return error.OutOfMemory;
     }
 
@@ -564,8 +570,9 @@ pub const Database = struct {
     /// ```
     ///
     /// No transaction may be open (asserted). Fails with `error.Sqlite` when
-    /// the bytes are not a database image, `error.OutOfMemory` when SQLite's
-    /// heap cannot hold the copy.
+    /// the bytes are not a database image or its integrity check fails (the
+    /// image is untrusted input; close the database after), `error.OutOfMemory`
+    /// when SQLite's heap cannot hold the copy.
     pub fn deserialize(db: *Database, bytes: []const u8) Error!void {
         std.debug.assert(db.transaction_depth == 0);
         std.debug.assert(bytes.len > 0);
@@ -580,6 +587,14 @@ pub const Database = struct {
 
         if (code != ok) {
             return db.fail(code);
+        }
+
+        var check = try db.prepare("PRAGMA quick_check");
+        defer check.finalize();
+        const verdict = if (try check.step()) sqlite3_column_text(check.handle, 0) else null;
+        if (verdict == null or !std.mem.eql(u8, std.mem.span(verdict.?), "ok")) {
+            log_failure("sqlite: deserialize: the image fails its integrity check", .{});
+            return error.Sqlite;
         }
     }
 
@@ -926,15 +941,22 @@ pub const Statement = struct {
         };
     }
 
+    /// A null pointer from SQLite is a SQL NULL — or the engine failing to
+    /// convert the value for want of memory, which must not read as "".
+    fn column_null(stmt: *Statement) Error![]const u8 {
+        if (sqlite3_errcode(stmt.db) & 0xff == nomem) return error.OutOfMemory;
+        return "";
+    }
+
     fn column_text(stmt: *Statement, column: u31, arena: std.mem.Allocator) Error![]const u8 {
-        const ptr = sqlite3_column_text(stmt.handle, column) orelse return "";
+        const ptr = sqlite3_column_text(stmt.handle, column) orelse return stmt.column_null();
         const len: usize = @intCast(sqlite3_column_bytes(stmt.handle, column));
 
         return arena.dupe(u8, ptr[0..len]) catch return error.OutOfMemory;
     }
 
     fn column_blob(stmt: *Statement, column: u31, arena: std.mem.Allocator) Error![]const u8 {
-        const raw = sqlite3_column_blob(stmt.handle, column) orelse return "";
+        const raw = sqlite3_column_blob(stmt.handle, column) orelse return stmt.column_null();
         const ptr: [*]const u8 = @ptrCast(raw);
         const len: usize = @intCast(sqlite3_column_bytes(stmt.handle, column));
 

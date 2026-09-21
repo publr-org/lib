@@ -161,7 +161,11 @@ dlopen, the binary stays self-contained; `SQLITE_OMIT_AUTOINIT` and
 `SQLITE_ENABLE_MEMSYS5` — what make `Runtime` real: the engine starts when
 told, inside the heap it was given; `SQLITE_ENABLE_FTS5` — the full-text
 index; plus the recommended misfeature removals (`DQS=0`, `TEMP_STORE=2`,
-`OMIT_DEPRECATED`, no memory statistics, WAL-synchronous NORMAL). Upgrading
+`OMIT_DEPRECATED`, no memory statistics, WAL-synchronous NORMAL) and the
+hardening set: files are created mode 0600, schemas are never trusted to run
+functions (`TRUSTED_SCHEMA=0`, plus defensive mode on every connection),
+foreign keys are enforced as declared, and a value, a statement and its
+parameters are capped at 64 MiB, 1 MiB and 999. Upgrading
 SQLite is replacing two files in `vendor/sqlite/`; the binding doesn't change,
 because the ABI it declares against has not broken since 2004.
 
