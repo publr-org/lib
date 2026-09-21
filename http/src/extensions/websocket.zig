@@ -144,8 +144,9 @@ pub const Handlers = struct {
     /// exactly matching one of these entries, compared case-insensitively, e.g.
     /// "https://app.example.com". Note this also refuses clients that send no
     /// Origin at all (curl, native apps) — have them send one, or leave this
-    /// null. null accepts any origin: only safe when the socket grants nothing
-    /// based on cookies or an ambient session.
+    /// null. null is same-origin: a request carrying an Origin is accepted only
+    /// when the origin's host equals the request's Host, and a request with no
+    /// Origin (curl, native apps) is accepted.
     origins: ?[]const []const u8 = null,
 };
 
@@ -219,6 +220,12 @@ pub const State = struct {
             const origin = request.header("origin") orelse return false;
 
             if (!origin_allowed(allowed, origin)) {
+                return false;
+            }
+        } else if (request.header("origin")) |origin| {
+            const host = request.header("host") orelse return false;
+
+            if (!origin_same_host(origin, host)) {
                 return false;
             }
         }
@@ -562,6 +569,24 @@ fn is_control(opcode: Opcode) bool {
         .close, .ping, .pong => true,
         else => false,
     };
+}
+
+/// Whether an Origin's host[:port] is the request's Host, case-insensitively.
+/// "null" and schemeless origins never match.
+fn origin_same_host(origin: []const u8, host: []const u8) bool {
+    const scheme_end = std.mem.indexOf(u8, origin, "://") orelse return false;
+    const origin_host = origin[scheme_end + 3 ..];
+
+    return origin_host.len > 0 and std.ascii.eqlIgnoreCase(origin_host, host);
+}
+
+test "a socket with no origin list is same-origin" {
+    try std.testing.expect(origin_same_host("https://app.example.com", "app.example.com"));
+    try std.testing.expect(origin_same_host("http://LocalHost:8100", "localhost:8100"));
+    try std.testing.expect(!origin_same_host("https://evil.example.com", "app.example.com"));
+    try std.testing.expect(!origin_same_host("null", "app.example.com"));
+    try std.testing.expect(!origin_same_host("app.example.com", "app.example.com"));
+    try std.testing.expect(!origin_same_host("https://", "app.example.com"));
 }
 
 fn origin_allowed(allowed: []const []const u8, origin: []const u8) bool {

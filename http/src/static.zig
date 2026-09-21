@@ -94,9 +94,6 @@ pub fn serve_file(
     switch (socket.read_file(fd, buffer)) {
         .len => |len| {
             try res.set_body(.ok, content_type(rel), buffer[0..len]);
-            // Pin the declared type: never let a browser sniff a served asset
-            // into something executable (a .js-sniffed .txt, say).
-            try res.set_header("X-Content-Type-Options", "nosniff");
             // SVG scripts in a document context; force a download so a stored
             // file can never be an XSS primitive.
             if (is_svg(rel)) {

@@ -167,7 +167,9 @@ pub const Form = struct {
 
                 const escape = encoded[index + 1 .. index + 3];
 
-                out[len] = std.fmt.parseInt(u8, escape, 16) catch return null;
+                const high = std.fmt.charToDigit(escape[0], 16) catch return null;
+                const low = std.fmt.charToDigit(escape[1], 16) catch return null;
+                out[len] = high << 4 | low;
                 index += 2;
             } else {
                 out[len] = char;

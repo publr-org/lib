@@ -203,9 +203,12 @@ pub fn init(arena: std.mem.Allocator) Response {
 }
 
 /// Serializes a response to the wire format: status line, the set headers, then
-/// the framing headers this writer owns (`Content-Length` from the body,
-/// `Connection` from `keep_alive`), the blank line, and the body unless
-/// `head_only` (a HEAD request keeps the `Content-Length` but sends no body). The
+/// the headers this writer owns (`X-Content-Type-Options: nosniff` on every
+/// response, `Content-Length` from the body, `Connection` from `keep_alive`),
+/// the blank line, and the body unless `head_only` (a HEAD request keeps the
+/// `Content-Length` but sends no body) or the status forbids one (204 and 304
+/// go out with `Content-Length: 0`, so a body set on them cannot desynchronize
+/// the client). The
 /// engine calls this into the slot's write buffer; fails with `error.WriteFailed`
 /// if the response does not fit.
 pub fn write_to(response: *const Response, writer: *std.Io.Writer, head_only: bool) Response.Error!void {
@@ -222,14 +225,17 @@ pub fn write_to(response: *const Response, writer: *std.Io.Writer, head_only: bo
             return error.WriteFailed;
     }
 
-    writer.print("Content-Length: {d}\r\n", .{response.body.len}) catch
+    const bodiless = status == .no_content or status == .not_modified;
+    const body = if (bodiless) "" else response.body;
+
+    writer.print("X-Content-Type-Options: nosniff\r\nContent-Length: {d}\r\n", .{body.len}) catch
         return error.WriteFailed;
     writer.print("Connection: {s}\r\n\r\n", .{
         if (response.keep_alive) "keep-alive" else "close",
     }) catch return error.WriteFailed;
 
     if (!head_only) {
-        writer.writeAll(response.body) catch return error.WriteFailed;
+        writer.writeAll(body) catch return error.WriteFailed;
     }
 }
 
@@ -325,7 +331,23 @@ test "text response serialises with content-length and keep-alive" {
 
     const expected = "HTTP/1.1 200 OK\r\n" ++
         "Content-Type: text/plain; charset=utf-8\r\nX-Test: 2\r\n" ++
-        "Content-Length: 5\r\nConnection: keep-alive\r\n\r\nhello";
+        "X-Content-Type-Options: nosniff\r\nContent-Length: 5\r\nConnection: keep-alive\r\n\r\nhello";
+    try std.testing.expectEqualStrings(expected, out.buffered());
+}
+
+test "204 and 304 never carry a body, whatever was set" {
+    var buffer: [1024]u8 = undefined;
+    var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
+    var response = init(arena_state.allocator());
+    try response.set_body(.no_content, "text/plain; charset=utf-8", "hello");
+
+    var out_buffer: [512]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&out_buffer);
+    try write_to(&response, &out, false);
+
+    const expected = "HTTP/1.1 204 No Content\r\n" ++
+        "Content-Type: text/plain; charset=utf-8\r\n" ++
+        "X-Content-Type-Options: nosniff\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
     try std.testing.expectEqualStrings(expected, out.buffered());
 }
 
