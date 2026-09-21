@@ -8,6 +8,7 @@
 //! arithmetic, the hash comparison, the observer taps, the indexed query
 //! shape. SQLite's semantics are never what is under test.
 test {
+    _ = @import("replay.zig");
     _ = @import("lookup.zig");
     _ = @import("recording.zig");
     _ = @import("batching.zig");

@@ -40,6 +40,7 @@ pub const Error = sqlite.Error || std.mem.Allocator.Error || error{
     NameTooLong,
     /// An option is out of range (a zero capacity or limit).
     InvalidLimit,
+    UncommittedRead,
 };
 
 /// How an executed artifact of a plan turned out — reported by the caller
@@ -77,6 +78,11 @@ pub const Options = struct {
     /// Longest artifact or key name, in bytes.
     name_len_max: u32 = 1024,
     observer: Observer = .{},
+    /// Maximum committed revisions retained for independent client replay.
+    replay_max: u32 = 10_000,
+    /// The most keys one `changes_since` returns; past it, the client is asked
+    /// to revalidate in full instead.
+    keys_max: u32 = 4_096,
 };
 
 /// One sealed set of changed keys, taken FIFO. The keys are duped into the
@@ -87,6 +93,11 @@ pub const Batch = struct {
 };
 
 const schema =
+    \\CREATE TABLE IF NOT EXISTS deps_changes (
+    \\    revision INTEGER NOT NULL,
+    \\    key TEXT NOT NULL,
+    \\    PRIMARY KEY (revision, key)
+    \\) WITHOUT ROWID;
     \\CREATE TABLE IF NOT EXISTS deps_edges (
     \\    artifact TEXT NOT NULL,
     \\    key TEXT NOT NULL,
@@ -114,7 +125,7 @@ pub const Index = struct {
     /// Creates the `deps_` tables (idempotently) in the caller's open
     /// database and validates the options.
     pub fn open(db: *sqlite.Database, options: Options) Error!Index {
-        if (options.queue_cap == 0 or options.fanout_max == 0 or options.name_len_max == 0) {
+        if (options.queue_cap == 0 or options.fanout_max == 0 or options.name_len_max == 0 or options.replay_max == 0 or options.keys_max == 0) {
             return error.InvalidLimit;
         }
         try db.exec(schema);
@@ -205,6 +216,47 @@ pub const Index = struct {
         return artifacts;
     }
 
+    /// Durable revision independent of the destructive artifact rebuild queue.
+    pub fn revision(index: *Index) Error!u64 {
+        return @intCast((try index.get_meta("revision")) orelse 0);
+    }
+
+    pub const Changes = struct {
+        revision: u64,
+        reset: bool,
+        keys: []const []const u8,
+    };
+
+    /// Call after commit on a request-owned connection. An old cursor, or more
+    /// than `keys_max` changed keys, requests full revalidation instead.
+    ///
+    /// Reads without a transaction so polling never takes the write lock: the
+    /// keys are bounded above by the revision read first, and the floor is
+    /// read again afterwards, so a prune that lands in between is caught.
+    pub fn changes_since(index: *Index, arena: std.mem.Allocator, after: u64) Error!Changes {
+        if (index.db.transaction_depth != 0) return error.UncommittedRead;
+        const latest = try index.revision();
+        const reset: Changes = .{ .revision = latest, .reset = true, .keys = &.{} };
+        if (after < try index.replay_floor() or after > latest) return reset;
+        var select = try index.db.prepare("SELECT DISTINCT key FROM deps_changes WHERE revision > ?1 AND revision <= ?2 ORDER BY key LIMIT ?3");
+        defer select.finalize();
+        try select.bind_int(1, @intCast(after));
+        try select.bind_int(2, @intCast(latest));
+        try select.bind_int(3, @as(i64, index.options.keys_max) + 1);
+        var keys: std.ArrayList([]const u8) = .empty;
+        while (try select.step()) {
+            if (keys.items.len == index.options.keys_max) return reset;
+            const row = try select.read(struct { key: []const u8 }, arena);
+            try keys.append(arena, row.key);
+        }
+        if (after < try index.replay_floor()) return reset;
+        return .{ .revision = latest, .reset = false, .keys = try keys.toOwnedSlice(arena) };
+    }
+
+    fn replay_floor(index: *Index) Error!u64 {
+        return @intCast((try index.get_meta("replay_floor")) orelse 0);
+    }
+
     // ---- the queue -----------------------------------------------------------
 
     /// Something changed. Coalesced: a key already pending stays one key. A
@@ -226,6 +278,22 @@ pub const Index = struct {
             index.emit(.invalidated, .{ key, index.db.changes() == 1 });
         }
 
+        const next = (try index.revision()) + 1;
+        var log = try index.db.prepare("INSERT OR IGNORE INTO deps_changes (revision, key) VALUES (?1, ?2)");
+        defer log.finalize();
+        for (keys) |key| {
+            log.reset();
+            try log.bind_int(1, @intCast(next));
+            try log.bind_text(2, key);
+            try log.exec();
+        }
+        try index.put_meta("revision", @intCast(next));
+        const floor = next -| index.options.replay_max;
+        var prune = try index.db.prepare("DELETE FROM deps_changes WHERE revision <= ?1");
+        defer prune.finalize();
+        try prune.bind_int(1, @intCast(floor));
+        try prune.exec();
+        try index.put_meta("replay_floor", @intCast(floor));
         try index.put_meta("last_change_ms", now_ms);
         if (try index.collecting_count() >= index.options.queue_cap) {
             _ = try index.seal();
