@@ -41,7 +41,7 @@ Vendoring is the same mechanism at a different path, or the amalgamation
 
 ## Philosophy
 
-Like [the HTTP server](../http-server) and [the SQLite binding](../sqlite), this
+Like [the HTTP server](../http) and [the SQLite binding](../sqlite), this
 library exists to power Publr, and its restraint is the feature. It is the four
 mechanisms every web sign-in has and every web app gets subtly wrong — hashing,
 throttling, CSRF, origin — with the policy left out: no users table, no session

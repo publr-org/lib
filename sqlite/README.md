@@ -49,12 +49,11 @@ Vendoring into a self-contained repo is the same mechanism at a different
 path: copy this whole directory — build.zig included — to
 `vendor/publr-sqlite/` and point the dependency there. A path dependency
 fetches nothing, so the single-checkout, offline-build property is preserved;
-upgrading the library is replacing the directory. See [mini-cms](../../demos/mini-cms)
-for a live consumer.
+upgrading the library is replacing the directory.
 
 ## Philosophy
 
-Like [the HTTP server](../http-server), this binding exists to power Publr, and
+Like [the HTTP server](../http), this binding exists to power Publr, and
 its restraint is the feature. It exposes exactly the calls its consumers need —
 a runtime, open, exec, prepare, bind, step, exec, reset, rows read into
 structs, changes, scoped transactions, database images — and a call is added
@@ -126,7 +125,7 @@ construction. A statement is run again by `reset` — the shape of a bulk
 insert, one prepare for many rows — and is otherwise single-use.
 
 **One connection, one thread, no pool.** The binding is built for a
-single-threaded server (the [HTTP server](../http-server)'s event loop):
+single-threaded server (the [HTTP server](../http)'s event loop):
 handlers never run concurrently, so one bare connection is safe to share with
 no locks, and the process matches SQLite's single writer. Nothing here is
 thread-safe, on purpose — sharing a `Database` across threads is a consumer
@@ -216,7 +215,7 @@ the manual.
 `zig build docs` renders the amalgamation rather than the source tree: `zig build
 amalgamate` writes the library as one file, `zig-out/publr_sqlite.zig`, tests
 stripped, in which `pub` means exactly "a consumer can call this" (see
-`../../zig-tools`). The tests run against that file too, and it is what to vendor.
+`../tools`). The tests run against that file too, and it is what to vendor.
 
 Two conventions keep those comments readable once rendered:
 

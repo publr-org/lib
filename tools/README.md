@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
 
 ```zon
 .dependencies = .{
-    .publr_tools = .{ .path = "../zig-tools" },
+    .publr_tools = .{ .path = "../tools" },
 },
 ```
 

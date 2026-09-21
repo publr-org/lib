@@ -220,9 +220,11 @@ One options struct, three ways in, strict precedence: **defaults < `--config`
 | `--config <path>` | — | — | .zon file whose fields mirror this table |
 | `--help` | — | — | prints this table's live version |
 
-Memory is sized by these values and allocated once at startup: each connection slot
+Memory is sized by these values and reserved once at startup: each connection slot
 owns its request and response buffers (~48 KiB per connection at the defaults, ~469
-MiB for 10,000 slots), plus one shared per-request arena. The startup banner prints
+MiB for 10,000 slots), plus one shared per-request arena. Reserved is not resident:
+the buffers are taken without being written, so a slot's pages are only committed
+once a connection uses them, and an idle server costs its code and state. The startup banner prints
 the resolved memory estimate, fd requirement, and the kernel's real backlog cap; the
 process raises its own fd limit or fails with an actionable message.
 
@@ -240,7 +242,7 @@ zig build docs        # writes zig-out/docs, then serve that folder
 
 The doc comments in `src/` are the reference — every public declaration carries
 its contract and a usage example. `zig build docs` renders them into a
-browsable, searchable site via [`../../zig-tools`](../../zig-tools), which is shared
+browsable, searchable site via [`../tools`](../tools), which is shared
 with the other libraries here. It documents the amalgamation, not the source
 tree: `zig build amalgamate` writes the whole library as one file,
 `zig-out/publr_http.zig`, tests stripped, in which `pub` means exactly "you can
@@ -281,3 +283,10 @@ them, so they are worth knowing before you write one:
   fd-limit raising. Production is POSIX.
 - Not WASM: a readiness-based server has no meaning on wasm32-wasi; the library is
   native-only.
+- A handler's *error* is caught and answered with a generic 500; a handler's *panic*
+  or failed assertion ends the process, as in any Zig program. Nothing is isolated
+  per request, so keep handlers to code that returns errors, and let the supervisor
+  restart the process.
+- No per-client accounting: the engine does not record the peer address, so it cannot
+  cap connections per source or log who sent a request. One client can occupy every
+  slot. Put a reverse proxy in front that rate-limits and forwards the address.

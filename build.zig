@@ -1,12 +1,12 @@
-//! The workspace: `lib/` holds the libraries, each with its own build, tests,
-//! amalgamation, and reference; `demos/` holds their consumers. This build does
-//! the one thing that spans them — one documentation site for every library:
+//! The workspace: each library has its own build, tests, amalgamation, and
+//! reference. This build does the one thing that spans them — one
+//! documentation site for every library:
 //!
 //!     zig build docs    # zig-out/docs: a home page, and each library under <name>/
 //!     zig build serve   # the same site at http://127.0.0.1:8100, served by publr-http
 //!
 //! Each library's reference comes in as the named lazy path `"docs"` its build
-//! publishes (see lib/zig-tools). Adding a library to the site is one entry in
+//! publishes (see tools/). Adding a library to the site is one entry in
 //! `libraries` below, after its `build.zig` calls `build_docs`.
 const std = @import("std");
 const tools = @import("publr_tools");

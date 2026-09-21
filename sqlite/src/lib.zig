@@ -29,7 +29,7 @@
 //! Threading: none, by contract. The vendored build is compiled with
 //! SQLITE_THREADSAFE=0, so no mutexes exist in the binary; a `Database` and
 //! everything derived from it must only ever be touched from one thread. That
-//! is the deal a single-threaded server (the sibling http-server) provides.
+//! is the deal a single-threaded server (the sibling http library) provides.
 const std = @import("std");
 const builtin = @import("builtin");
 const transaction_module = @import("transaction.zig");
