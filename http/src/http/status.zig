@@ -12,6 +12,8 @@ pub const Status = enum(u16) {
     created = 201,
     /// Done, nothing to say — a DELETE, or a PUT that changed nothing visible.
     no_content = 204,
+    /// A bounded byte range of a static media file.
+    partial_content = 206,
     /// Permanent redirect; clients may cache it. Use with `redirect`.
     moved_permanently = 301,
     /// Temporary redirect, same method. Use with `redirect`.
@@ -42,6 +44,8 @@ pub const Status = enum(u16) {
     uri_too_long = 414,
     /// The body's `Content-Type` is not one the handler accepts.
     unsupported_media_type = 415,
+    /// No requested byte range overlaps the resource.
+    range_not_satisfiable = 416,
     /// The body parsed but fails validation.
     unprocessable_content = 422,
     /// The conventional answer when a WebSocket route gets a plain request.
@@ -78,6 +82,7 @@ pub fn reason(status: Status) []const u8 {
         .ok => "OK",
         .created => "Created",
         .no_content => "No Content",
+        .partial_content => "Partial Content",
         .moved_permanently => "Moved Permanently",
         .found => "Found",
         .see_other => "See Other",
@@ -92,6 +97,7 @@ pub fn reason(status: Status) []const u8 {
         .payload_too_large => "Payload Too Large",
         .uri_too_long => "URI Too Long",
         .unsupported_media_type => "Unsupported Media Type",
+        .range_not_satisfiable => "Range Not Satisfiable",
         .unprocessable_content => "Unprocessable Content",
         .upgrade_required => "Upgrade Required",
         .too_many_requests => "Too Many Requests",

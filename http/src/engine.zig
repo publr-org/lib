@@ -48,7 +48,7 @@ else
     .{ 0, 0, 0, 0 };
 
 const refused_response = "HTTP/1.1 503 Service Unavailable\r\n" ++
-    "Content-Type: text/plain; charset=utf-8\r\nContent-Length: 19\r\n" ++
+    "Content-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\nContent-Length: 19\r\n" ++
     "Retry-After: 1\r\nConnection: close\r\n\r\nservice unavailable";
 
 /// The single configuration surface: the same struct whether filled from code, from a
@@ -103,6 +103,23 @@ pub fn memory_bytes(options: *const Options) u64 {
 pub fn files_needed(options: *const Options) u64 {
     return @as(u64, options.connections_max) + fd_margin;
 }
+
+/// A slot buffer or the arena: reserved, not written. The generic `alloc` fills new memory
+/// with `undefined`, which safe builds write out byte by byte, so every buffer would be
+/// resident from startup whether a connection ever used it or not. The raw path leaves
+/// the pages untouched until the first request lands in them; `memory_bytes` is then
+/// the ceiling, and what is resident is what has been used.
+fn reserve(gpa: std.mem.Allocator, len: usize) error{OutOfMemory}![]u8 {
+    const ptr = gpa.rawAlloc(len, buffer_alignment, @returnAddress()) orelse
+        return error.OutOfMemory;
+    return ptr[0..len];
+}
+
+fn release(gpa: std.mem.Allocator, memory: []u8) void {
+    gpa.rawFree(memory, buffer_alignment, @returnAddress());
+}
+
+const buffer_alignment: std.mem.Alignment = .@"16";
 
 /// Handler scratch arena: enough to build a response body before serialization, never
 /// less than a fixed floor so small response caps do not starve handlers.
@@ -163,6 +180,9 @@ pub const Counters = struct {
 /// the engine absorbs those on the spot, closing the slot or waiting for
 /// writability, and counts them in `Counters`.
 pub const Error = error{
+    /// An option is out of range: see the bounds in `init`. Checked at run time
+    /// in every build mode, since an embedder may fill `Options` from input.
+    InvalidOptions,
     /// `socket()` itself refused: the kernel would not hand out a TCP socket.
     SocketFailed,
     /// `bind()` failed for a reason other than the port being taken — an address
@@ -367,12 +387,11 @@ pub const Engine = struct {
         on_request: OnRequest,
     ) Error!Engine {
         std.debug.assert(vtables.len <= extensions_max);
-        std.debug.assert(options.connections_max > 0);
-        std.debug.assert(options.connections_max <= connections_limit);
-        std.debug.assert(options.request_bytes_max >= request_module.head_bytes_max);
-        std.debug.assert(options.response_bytes_max >= 1 << 10);
-        std.debug.assert(options.idle_timeout_ms >= 2 * scan_interval_ms);
-        std.debug.assert(options.request_timeout_ms >= 2 * scan_interval_ms);
+        if (options.connections_max == 0 or options.connections_max > connections_limit) return error.InvalidOptions;
+        if (options.request_bytes_max < request_module.head_bytes_max) return error.InvalidOptions;
+        if (options.response_bytes_max < 1 << 10) return error.InvalidOptions;
+        if (options.idle_timeout_ms < 2 * scan_interval_ms) return error.InvalidOptions;
+        if (options.request_timeout_ms < 2 * scan_interval_ms) return error.InvalidOptions;
 
         try socket.ensure_file_limit(files_needed(&options));
 
@@ -391,16 +410,16 @@ pub const Engine = struct {
 
         const read_total = std.math.mul(u64, count, options.request_bytes_max) catch
             return error.OutOfMemory;
-        const read_buffers = gpa.alloc(u8, @intCast(read_total)) catch return error.OutOfMemory;
-        errdefer gpa.free(read_buffers);
+        const read_buffers = try reserve(gpa, @intCast(read_total));
+        errdefer release(gpa, read_buffers);
 
         const write_total = std.math.mul(u64, count, options.response_bytes_max) catch
             return error.OutOfMemory;
-        const write_buffers = gpa.alloc(u8, @intCast(write_total)) catch return error.OutOfMemory;
-        errdefer gpa.free(write_buffers);
+        const write_buffers = try reserve(gpa, @intCast(write_total));
+        errdefer release(gpa, write_buffers);
 
-        const arena_buffer = gpa.alloc(u8, arena_bytes(&options)) catch return error.OutOfMemory;
-        errdefer gpa.free(arena_buffer);
+        const arena_buffer = try reserve(gpa, arena_bytes(&options));
+        errdefer release(gpa, arena_buffer);
 
         const free_stack = gpa.alloc(u32, options.connections_max) catch return error.OutOfMemory;
         errdefer gpa.free(free_stack);
@@ -467,9 +486,9 @@ pub const Engine = struct {
 
         server.loop.deinit();
         server.gpa.free(server.free_stack);
-        server.gpa.free(server.arena_buffer);
-        server.gpa.free(server.write_buffers);
-        server.gpa.free(server.read_buffers);
+        release(server.gpa, server.arena_buffer);
+        release(server.gpa, server.write_buffers);
+        release(server.gpa, server.read_buffers);
         server.gpa.free(server.slots);
         server.* = undefined;
     }
