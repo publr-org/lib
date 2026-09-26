@@ -2,3 +2,12 @@ zig-out/
 .zig-cache/
 .DS_Store
 SECURITY_REVIEW.md
+
+# build output, local data and credentials
+node_modules/
+dist/
+data/*.db
+.env
+.env.*
+credentials
+*.pem
