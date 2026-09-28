@@ -85,25 +85,7 @@ pub const Response = struct {
     pub fn set_header(response: *Response, name: []const u8, value: []const u8) Error!void {
         std.debug.assert(response.headers_len <= headers_max);
 
-        if (name.len == 0 or
-            std.ascii.eqlIgnoreCase(name, "content-length") or
-            std.ascii.eqlIgnoreCase(name, "connection") or
-            std.ascii.eqlIgnoreCase(name, "transfer-encoding"))
-        {
-            return error.InvalidHeader;
-        }
-
-        if (name.len > header_name_len_max) {
-            return error.HeaderTooLarge;
-        }
-
-        if (value.len > header_value_len_max) {
-            return error.HeaderTooLarge;
-        }
-
-        if (!header_name_valid(name) or !header_value_valid(value)) {
-            return error.InvalidHeader;
-        }
+        try check_header(name, value);
 
         for (response.headers[0..response.headers_len]) |*existing| {
             if (std.ascii.eqlIgnoreCase(existing.name, name)) {
@@ -111,6 +93,21 @@ pub const Response = struct {
                 return;
             }
         }
+
+        try response.append_header(name, value);
+    }
+
+    /// Adds a header beside any of the same name: what a second `Set-Cookie` needs, which
+    /// cannot share a line with the first. Checked as `set_header` checks.
+    pub fn add_header(response: *Response, name: []const u8, value: []const u8) Error!void {
+        std.debug.assert(response.headers_len <= headers_max);
+
+        try check_header(name, value);
+        try response.append_header(name, value);
+    }
+
+    fn append_header(response: *Response, name: []const u8, value: []const u8) Error!void {
+        std.debug.assert(name.len > 0);
 
         if (response.headers_len == headers_max) {
             return error.TooManyHeaders;
@@ -271,6 +268,30 @@ fn header_value_valid(value: []const u8) bool {
     return true;
 }
 
+fn check_header(name: []const u8, value: []const u8) Response.Error!void {
+    std.debug.assert(header_name_len_max > 0);
+
+    if (name.len == 0 or
+        std.ascii.eqlIgnoreCase(name, "content-length") or
+        std.ascii.eqlIgnoreCase(name, "connection") or
+        std.ascii.eqlIgnoreCase(name, "transfer-encoding"))
+    {
+        return error.InvalidHeader;
+    }
+
+    if (name.len > header_name_len_max) {
+        return error.HeaderTooLarge;
+    }
+
+    if (value.len > header_value_len_max) {
+        return error.HeaderTooLarge;
+    }
+
+    if (!header_name_valid(name) or !header_value_valid(value)) {
+        return error.InvalidHeader;
+    }
+}
+
 test "header injection attempts are rejected at runtime" {
     var buffer: [1024]u8 = undefined;
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
@@ -313,7 +334,23 @@ test "framing headers and empty names are rejected in every build mode" {
         response.set_header("Connection", "close"),
     );
     try std.testing.expectError(error.InvalidHeader, response.set_header("", "x"));
+    try std.testing.expectError(error.InvalidHeader, response.add_header("Connection", "x"));
     try std.testing.expectEqual(@as(u32, 0), response.headers_len);
+}
+
+test "add_header keeps both of a repeated name, set_header replaces the first" {
+    var buffer: [1024]u8 = undefined;
+    var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
+    var response = init(arena_state.allocator());
+
+    try response.set_header("Set-Cookie", "a=1");
+    try response.add_header("Set-Cookie", "b=2");
+    try std.testing.expectEqual(@as(u32, 2), response.headers_len);
+    try std.testing.expectEqualStrings("a=1", response.header("Set-Cookie").?);
+
+    try response.set_header("Set-Cookie", "a=3");
+    try std.testing.expectEqual(@as(u32, 2), response.headers_len);
+    try std.testing.expectEqualStrings("b=2", response.headers[1].value);
 }
 
 test "text response serialises with content-length and keep-alive" {

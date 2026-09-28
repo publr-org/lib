@@ -26,6 +26,8 @@ pub const Status = enum(u16) {
     bad_request = 400,
     /// No or bad credentials.
     unauthorized = 401,
+    /// A limit of a free plan was reached; a paid plan lifts it.
+    payment_required = 402,
     /// Credentials are fine; this action is not allowed for them.
     forbidden = 403,
     /// Engine: the router's default for an unmatched path.
@@ -89,6 +91,7 @@ pub fn reason(status: Status) []const u8 {
         .not_modified => "Not Modified",
         .bad_request => "Bad Request",
         .unauthorized => "Unauthorized",
+        .payment_required => "Payment Required",
         .forbidden => "Forbidden",
         .not_found => "Not Found",
         .method_not_allowed => "Method Not Allowed",
