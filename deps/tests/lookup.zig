@@ -91,3 +91,21 @@ test "1.9 order is stable" {
     try world.index.record("/c", &.{"entry:1"});
     try world.expect_affected(&.{"entry:1"}, &.{ "/a", "/b", "/c" });
 }
+
+test "1.x an artifact's own keys: affected the other way round" {
+    var world: helper.World = undefined;
+    try world.open(.{});
+    defer world.close();
+    try world.index.record("/posts/hello", &.{ "entry:7", "entry:3", "type:post" });
+    try world.index.record("/b", &.{"entry:3"});
+
+    const keys = try world.index.keys_of(world.arena(), "/posts/hello");
+    try std.testing.expectEqual(@as(usize, 3), keys.len);
+    try std.testing.expectEqualStrings("entry:3", keys[0]);
+    try std.testing.expectEqualStrings("type:post", keys[2]);
+
+    // Recorded again: replaced, not added to; never recorded: none.
+    try world.index.record("/posts/hello", &.{"entry:1"});
+    try std.testing.expectEqual(@as(usize, 1), (try world.index.keys_of(world.arena(), "/posts/hello")).len);
+    try std.testing.expectEqual(@as(usize, 0), (try world.index.keys_of(world.arena(), "/nowhere")).len);
+}

@@ -194,6 +194,24 @@ pub const Index = struct {
 
     // ---- lookup --------------------------------------------------------------
 
+    /// The keys `artifact` recorded when it was last built, sorted, duped into
+    /// `arena`: `affected` the other way round. None for an artifact never
+    /// recorded. One indexed query.
+    pub fn keys_of(index: *Index, arena: std.mem.Allocator, artifact: []const u8) Error![]const []const u8 {
+        try index.check_name(artifact);
+
+        var select = try index.db.prepare("SELECT key FROM deps_edges WHERE artifact = ?1 ORDER BY key");
+        defer select.finalize();
+        try select.bind_text(1, artifact);
+
+        var keys: std.ArrayList([]const u8) = .empty;
+        while (try select.step()) {
+            const row = try select.read(struct { key: []const u8 }, arena);
+            try keys.append(arena, row.key);
+        }
+        return keys.toOwnedSlice(arena);
+    }
+
     /// The artifacts that recorded any of `keys`: each once, sorted by name,
     /// duped into `arena`. One indexed query per key, never a scan.
     pub fn affected(index: *Index, arena: std.mem.Allocator, keys: []const []const u8) Error![]const []const u8 {
