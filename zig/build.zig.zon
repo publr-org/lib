@@ -1,0 +1,18 @@
+.{
+    .name = .publr_zig,
+    .version = "0.1.0",
+    .fingerprint = 0xbff6bfaaa19cdfe3,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // Zig 0.16.0's own source, the parts its build needs, as released.
+        .zig = .{ .path = "vendor/zig" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build",
+        "src",
+        "tests",
+        "vendor",
+    },
+}
