@@ -26,10 +26,19 @@ fn add_runtime(b: *std.Build, library: *std.Build.Module, target: std.Target) vo
         .linux => "linux",
         else => @panic("publr_wasm: WAMR is built for macOS and Linux only"),
     };
-    const flags = b.allocator.dupe([]const u8, &(common_flags ++ [_][]const u8{
-        if (target.os.tag == .macos) "-DBH_PLATFORM_DARWIN" else "-DBH_PLATFORM_LINUX",
-        if (target.os.tag == .linux) "-DWASM_HAVE_MREMAP=1" else "-DWASM_HAVE_MREMAP=0",
-    })) catch @panic("OOM");
+    const darwin_flags = [_][]const u8{ "-DBH_PLATFORM_DARWIN", "-DWASM_HAVE_MREMAP=0" };
+    // glibc declares `mremap` only for GNU sources, which WAMR's own build asks for on Linux.
+    const linux_flags = [_][]const u8{
+        "-DBH_PLATFORM_LINUX",
+        "-DWASM_HAVE_MREMAP=1",
+        "-D_GNU_SOURCE",
+    };
+    const platform_flags: []const []const u8 = if (target.os.tag == .linux)
+        &linux_flags
+    else
+        &darwin_flags;
+    const flags = std.mem.concat(b.allocator, []const u8, &.{ &common_flags, platform_flags }) catch
+        @panic("OOM");
 
     inline for (include_paths) |path| {
         library.addIncludePath(b.path(root ++ path));
@@ -45,6 +54,14 @@ fn add_runtime(b: *std.Build, library: *std.Build.Module, target: std.Target) vo
         .file = b.path(b.fmt(root ++ "shared/platform/{s}/platform_init.c", .{platform})),
         .flags = flags,
     });
+
+    // Where the system has no `mremap`, WAMR's own stands in for it.
+    if (target.os.tag != .linux) {
+        library.addCSourceFile(.{
+            .file = b.path(root ++ "shared/platform/common/memory/mremap.c"),
+            .flags = flags,
+        });
+    }
 
     // The invoker is assembly behind the preprocessor's platform guards, so it goes through
     // the C preprocessor like a `.S` file would.
@@ -107,7 +124,6 @@ const sources = [_][]const u8{
     "shared/platform/common/posix/posix_malloc.c",
     "shared/platform/common/posix/posix_memmap.c",
     "shared/platform/common/posix/posix_blocking_op.c",
-    "shared/platform/common/memory/mremap.c",
 };
 
 /// The flags are part of the library's contract: the fast interpreter and nothing else
