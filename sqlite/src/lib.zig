@@ -48,6 +48,9 @@ const dbconfig_defensive: c_int = 1010; // SQLITE_DBCONFIG_DEFENSIVE
 const readonly: c_int = 8; // SQLITE_READONLY
 const constraint: c_int = 19; // SQLITE_CONSTRAINT
 const misuse: c_int = 21; // SQLITE_MISUSE
+const interrupt: c_int = 9; // SQLITE_INTERRUPT
+const toobig: c_int = 18; // SQLITE_TOOBIG
+const limit_length: c_int = 0; // SQLITE_LIMIT_LENGTH
 
 // Fundamental datatypes, from sqlite3.h.
 const type_integer: c_int = 1; // SQLITE_INTEGER
@@ -79,6 +82,13 @@ extern fn sqlite3_open_v2(
 ) c_int;
 extern fn sqlite3_close(db: ?*DbHandle) c_int;
 extern fn sqlite3_busy_timeout(db: ?*DbHandle, ms: c_int) c_int;
+extern fn sqlite3_limit(db: ?*DbHandle, id: c_int, value: c_int) c_int;
+extern fn sqlite3_progress_handler(
+    db: ?*DbHandle,
+    steps: c_int,
+    callback: ?*const fn (?*anyopaque) callconv(.c) c_int,
+    context: ?*anyopaque,
+) void;
 extern fn sqlite3_db_config(db: ?*DbHandle, op: c_int, ...) c_int;
 extern fn sqlite3_errcode(db: ?*DbHandle) c_int;
 extern fn sqlite3_errmsg(db: ?*DbHandle) [*:0]const u8;
@@ -177,6 +187,13 @@ pub const Error = error{
     /// heap, the heap is full. The statement that hit it is rolled back by
     /// SQLite; the connection stays usable.
     OutOfMemory,
+    /// The statement used up the work `Database.limit_work` allows and was
+    /// stopped. Expected: tell the caller to ask for less. Logged at debug
+    /// level only.
+    Interrupted,
+    /// A string or blob grew past what `Database.limit_size` allows. Expected:
+    /// tell the caller to ask for less. Logged at debug level only.
+    TooBig,
 };
 
 /// The minimum size of a fixed heap handed to `Runtime.init`.
@@ -436,6 +453,39 @@ pub const Database = struct {
     /// `sql` is `comptime`: SQL is code, and the compiler enforces it. A
     /// string containing runtime data — user input especially — does not
     /// compile; data reaches the database only through `prepare` + `bind_*`.
+    /// Stops any statement on this connection after `steps` of SQLite's
+    /// virtual machine instructions, with `error.Interrupted`: a budget that
+    /// counts work, not time, so the same statement is stopped at the same
+    /// point every run. `null` lifts it. Set it before the statement runs,
+    /// lift it after.
+    ///
+    /// ```zig
+    /// db.limit_work(1_000_000);
+    /// defer db.limit_work(null);
+    /// ```
+    pub fn limit_work(db: *Database, steps: ?u32) void {
+        std.debug.assert(steps == null or steps.? > 0);
+        std.debug.assert(steps == null or steps.? <= std.math.maxInt(c_int));
+
+        if (steps) |budget| {
+            sqlite3_progress_handler(db.handle, @intCast(budget), &stop_working, null);
+        } else {
+            sqlite3_progress_handler(db.handle, 0, null, null);
+        }
+    }
+
+    /// Caps every string or blob a statement on this connection builds at
+    /// `bytes`, with `error.TooBig` past it: a large answer stops before it
+    /// fills the heap. `null` puts back the build's maximum.
+    pub fn limit_size(db: *Database, bytes: ?u32) void {
+        std.debug.assert(bytes == null or bytes.? > 0);
+        std.debug.assert(bytes == null or bytes.? <= std.math.maxInt(c_int));
+
+        const value: c_int = if (bytes) |cap| @intCast(cap) else std.math.maxInt(c_int);
+
+        _ = sqlite3_limit(db.handle, limit_length, value);
+    }
+
     pub fn exec(db: *Database, comptime sql: [*:0]const u8) Error!void {
         const code = sqlite3_exec(db.handle, sql, null, null, null);
 
@@ -1000,6 +1050,14 @@ fn fail_on(handle: *DbHandle, code: c_int) Error {
             log_failure("sqlite: {s} (code {d})", .{ sqlite3_errmsg(handle), code });
             return error.ReadOnly;
         },
+        interrupt => {
+            std.log.debug("sqlite: {s} (code {d})", .{ sqlite3_errmsg(handle), code });
+            return error.Interrupted;
+        },
+        toobig => {
+            std.log.debug("sqlite: {s} (code {d})", .{ sqlite3_errmsg(handle), code });
+            return error.TooBig;
+        },
         nomem => {
             log_failure("sqlite: {s} (code {d})", .{ sqlite3_errmsg(handle), code });
             return error.OutOfMemory;
@@ -1024,4 +1082,12 @@ fn log_failure(comptime format: []const u8, args: anytype) void {
 
 test {
     _ = transaction_module;
+}
+
+/// The progress handler `limit_work` sets: called once the budget is spent, it stops the
+/// statement.
+fn stop_working(context: ?*anyopaque) callconv(.c) c_int {
+    std.debug.assert(context == null);
+
+    return 1;
 }

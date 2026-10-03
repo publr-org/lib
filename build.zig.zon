@@ -8,6 +8,7 @@
         .http_server = .{ .path = "http" },
         .publr_sqlite = .{ .path = "sqlite" },
         .publr_auth = .{ .path = "auth" },
+        .publr_groq = .{ .path = "groq" },
     },
     .paths = .{
         "build.zig",

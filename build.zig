@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) void {
     const http_server = b.dependency("http_server", .{ .target = target });
     const sqlite = b.dependency("publr_sqlite", .{ .target = target });
     const auth = b.dependency("publr_auth", .{ .target = target });
+    const groq = b.dependency("publr_groq", .{ .target = target });
 
     const site = tools.hub(b, .{ .packages = &.{
         .{
@@ -36,6 +37,11 @@ pub fn build(b: *std.Build) void {
             .name = "publr_auth",
             .description = "Password hashing, sign-in throttling and CSRF tokens, allocating only at startup.",
             .docs = auth.namedLazyPath("docs"),
+        },
+        .{
+            .name = "publr_groq",
+            .description = "GROQ, the query language, from text to value over any dataset.",
+            .docs = groq.namedLazyPath("docs"),
         },
     } });
 

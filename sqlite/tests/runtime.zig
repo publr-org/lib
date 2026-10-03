@@ -132,3 +132,55 @@ fn temporary_path(
 ) ![:0]u8 {
     return std.fmt.bufPrintZ(buffer, ".zig-cache/tmp/{s}/{s}", .{ &temporary.sub_path, name });
 }
+
+test "limit_work stops a statement past its budget, the same way every run" {
+    var runtime = try sqlite.Runtime.init(.{});
+    defer runtime.deinit();
+
+    var db = try sqlite.Database.open(&runtime, ":memory:", .{});
+    defer db.close();
+
+    const counting = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n " ++
+        "WHERE i < 1000000) SELECT count(*) FROM n";
+
+    db.limit_work(10_000);
+
+    var heavy = try db.prepare(counting);
+    defer heavy.finalize();
+
+    try std.testing.expectError(error.Interrupted, heavy.step());
+
+    db.limit_work(null);
+
+    var again = try db.prepare(counting);
+    defer again.finalize();
+
+    try std.testing.expect(try again.step());
+
+    const Counted = struct { count: i64 };
+    const counted = try again.read(Counted, std.testing.allocator);
+
+    try std.testing.expectEqual(@as(i64, 1_000_000), counted.count);
+}
+
+test "limit_size stops a value growing past its cap, then lifts" {
+    var runtime = try sqlite.Runtime.init(.{});
+    defer runtime.deinit();
+
+    var db = try sqlite.Database.open(&runtime, ":memory:", .{});
+    defer db.close();
+
+    db.limit_size(1000);
+
+    var big = try db.prepare("SELECT length(zeroblob(5000))");
+    defer big.finalize();
+
+    try std.testing.expectError(error.TooBig, big.step());
+
+    db.limit_size(null);
+
+    var again = try db.prepare("SELECT length(zeroblob(5000))");
+    defer again.finalize();
+
+    try std.testing.expect(try again.step());
+}

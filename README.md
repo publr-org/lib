@@ -8,6 +8,7 @@ crypto primitive. Anything that owns a noun stays in the application.
 ```
 auth/     publr_auth    argon2id hashing, login throttling, CSRF, origin checks
 deps/     publr_deps    a dependency index for build artifacts, in your SQLite database
+groq/     publr_groq    GROQ, the query language (GROQ-1.revision5), over any dataset
 http/     publr_http    a fixed-capacity, single-threaded HTTP/1.1 server, composed at compile time
 sqlite/   publr_sqlite  SQLite, vendored and compiled in, one connection, one thread
 wasm/     publr_wasm    WebAssembly modules run in a sandbox: WAMR's interpreter, vendored
@@ -25,7 +26,7 @@ zig build amalgamate    # zig-out/publr_http.zig: the whole library as one file,
 zig build docs          # zig-out/docs: the reference, rendered from the amalgamation
 ```
 
-For `auth`, `http` and `sqlite` the amalgamation is the contract: in it, `pub`
+For `auth`, `groq`, `http` and `sqlite` the amalgamation is the contract: in it, `pub`
 means exactly "a consumer can call this", and the tests run against that file
 too. It is also what to vendor. `deps` has no amalgamation yet; its contract is
 the test matrix in `deps/TESTS.md`. Neither has `wasm` nor `zig`; their contract is each
