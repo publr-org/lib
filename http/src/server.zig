@@ -142,6 +142,13 @@ pub fn Server(comptime extension_modules: anytype) type {
         /// response is already final. Handler errors have become the 500 by
         /// then. Null logs nothing.
         on_response: ?OnResponse = null,
+        /// The path everything is served under (`/environments/dev`), empty at the root.
+        /// It comes off a request's path before routing, so routes and handlers match as at
+        /// the root; a request outside it is not this app's (404).
+        path_base: []const u8 = "",
+        /// Paths answered as they are whether or not they carry `path_base`: what clients
+        /// beside the server call on its own port (`/_publr/`), never the public site.
+        path_base_exempt: []const u8 = "",
 
         pub const OnResponse = *const fn (req: *const router_module.Request, res: *const Response) void;
 
@@ -372,6 +379,21 @@ pub fn Server(comptime extension_modules: anytype) type {
             response: *Response,
             ctx: *Context,
         ) void {
+            // Lives through the dispatch, the only time the request is read.
+            var stripped: request_module.Request = req.inner.*;
+
+            const exempt = app.path_base_exempt.len > 0 and
+                std.mem.startsWith(u8, req.inner.path, app.path_base_exempt);
+
+            if (!exempt and !within_base(app.path_base, req, &stripped)) {
+                response.text(.not_found, "Not Found") catch {
+                    response.body = "";
+                    response.status = .not_found;
+                };
+                if (app.on_response) |on_response| on_response(req, response);
+                return;
+            }
+
             router_module.dispatch(&app.routes, req, response, ctx) catch |err| {
                 // The error name stays server-side: internal names (OutOfMemory,
                 // app-specific errors) are reconnaissance material on the wire.
@@ -390,6 +412,28 @@ pub fn Server(comptime extension_modules: anytype) type {
             if (app.on_response) |on_response| on_response(req, response);
         }
     };
+}
+
+/// Whether the request is under `base`, its path then taken off: `/environments/dev/admin`
+/// is `/admin`, `/environments/dev` is `/`. Always at the root.
+fn within_base(
+    base: []const u8,
+    req: *router_module.Request,
+    stripped: *request_module.Request,
+) bool {
+    if (base.len == 0) return true;
+
+    const path = req.inner.path;
+
+    if (!std.mem.startsWith(u8, path, base)) return false;
+
+    const rest = path[base.len..];
+
+    if (rest.len != 0 and rest[0] != '/') return false;
+
+    stripped.path = if (rest.len == 0) "/" else rest;
+    req.inner = stripped;
+    return true;
 }
 
 const harness = @import("testing.zig");
@@ -485,6 +529,40 @@ test "on_response sees every dispatched request with its final response, the 500
     _ = app.handle(arena, &boom_request);
 
     try std.testing.expectEqualStrings("get /zig 200\nget /boom 500\n", response_log.lines.items);
+}
+
+test "under a base path, routes match without it, and nothing outside it is served" {
+    var app = TestApp.offline(.{});
+    app.router().get("/:name", &testing_routes.hello);
+    app.path_base = "/environments/dev";
+    app.on_response = &response_log.record;
+    response_log.lines = .empty;
+    defer {
+        response_log.lines.deinit(std.testing.allocator);
+        response_log.lines = .empty;
+    }
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    app.path_base_exempt = "/_internal";
+
+    for ([_][]const u8{
+        "GET /environments/dev/zig HTTP/1.1\r\nHost: h\r\n\r\n",
+        "GET /zig HTTP/1.1\r\nHost: h\r\n\r\n",
+        "GET /environments/devx/zig HTTP/1.1\r\nHost: h\r\n\r\n",
+        "GET /_internal HTTP/1.1\r\nHost: h\r\n\r\n",
+    }) |raw| {
+        var parsed = try request_module.parse(raw);
+        var request: Request = .{ .inner = &parsed.complete, .body = "" };
+        _ = app.handle(arena, &request);
+    }
+
+    try std.testing.expectEqualStrings(
+        "get /zig 200\nget /zig 404\nget /environments/devx/zig 404\nget /_internal 200\n",
+        response_log.lines.items,
+    );
 }
 
 test "serves pipelined keep-alive requests and echoes bodies" {
