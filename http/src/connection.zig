@@ -54,7 +54,7 @@ pub fn process_requests(server: *Engine, slot: *Slot) void {
     while (handled < engine_module.pipeline_batch) : (handled += 1) {
         switch (next_request(server, slot)) {
             .wait => return,
-            .closed => return,
+            .closed, .streamed => return,
             .ready => |request| {
                 std.debug.assert(slot.state == .reading);
 
@@ -94,7 +94,7 @@ fn clear_pending(server: *Engine, slot: *Slot) void {
     }
 }
 
-const NextRequest = union(enum) { wait, closed, ready: request_module.Request };
+const NextRequest = union(enum) { wait, closed, streamed, ready: request_module.Request };
 
 fn next_request(server: *Engine, slot: *Slot) NextRequest {
     std.debug.assert(slot.state == .reading);
@@ -121,6 +121,25 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
         .complete => |request| request,
     };
 
+    if (request.content_length > 0) {
+        if (server.stream_hooks) |hooks| {
+            slot.served += 1;
+
+            switch (hooks.head(server, slot, &request)) {
+                .none => slot.served -= 1,
+                .streaming => {
+                    server.counters.requests_total += 1;
+                    begin_stream(server, slot, &request);
+                    return .streamed;
+                },
+                .answered => {
+                    server.counters.requests_total += 1;
+                    return .closed;
+                },
+            }
+        }
+    }
+
     const total: u64 = @as(u64, request.head_len) + request.content_length;
 
     if (total > slot.read_buffer.len) {
@@ -138,6 +157,80 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
     }
 
     return .{ .ready = request };
+}
+
+/// The head is in and the app layer took the body as a stream: what of the body is
+/// buffered goes to it now, the rest as it arrives.
+fn begin_stream(server: *Engine, slot: *Slot, request: *const request_module.Request) void {
+    std.debug.assert(slot.state == .reading);
+    std.debug.assert(slot.stream_state != null);
+
+    const buffered: u64 = @min(slot.read_len - request.head_len, request.content_length);
+    const consumed: u32 = request.head_len + @as(u32, @intCast(buffered));
+    const body = slot.read_buffer[request.head_len..consumed];
+
+    slot.state = .streaming;
+    slot.keep_alive = request.keep_alive;
+    slot.body_left = request.content_length;
+    slot.deadline_ms = engine_module.now_ms() + server.options.request_timeout_ms;
+
+    if (!feed(server, slot, body)) {
+        return;
+    }
+
+    const remaining = slot.read_len - consumed;
+    std.mem.copyForwards(u8, slot.read_buffer[0..remaining], slot.read_buffer[consumed..slot.read_len]);
+    slot.read_len = remaining;
+
+    if (slot.body_left == 0) {
+        server.stream_hooks.?.end(server, slot);
+    }
+}
+
+/// Hands a piece of the body to the stream; on a failure the stream is aborted, a 500 goes
+/// out and the connection closes.
+fn feed(server: *Engine, slot: *Slot, bytes: []const u8) bool {
+    std.debug.assert(slot.state == .streaming);
+    std.debug.assert(bytes.len <= slot.body_left);
+
+    slot.body_left -= bytes.len;
+
+    if (bytes.len == 0 or server.stream_hooks.?.data(server, slot, bytes)) {
+        return true;
+    }
+
+    slot.state = .reading;
+    slot.read_len = 0;
+    respond_error(server, slot, .internal_server_error);
+
+    return false;
+}
+
+/// A streaming slot is readable: the body's next pieces, never past its end, so a request
+/// pipelined behind it stays in the socket.
+pub fn service_streaming(server: *Engine, slot: *Slot) void {
+    std.debug.assert(slot.state == .streaming);
+    std.debug.assert(slot.read_len == 0);
+
+    // Bounded by the body: every pass takes at least one byte of it, or stops.
+    while (slot.body_left > 0) {
+        const room: usize = @intCast(@min(slot.read_buffer.len, slot.body_left));
+        const received = socket.recv(slot.fd, slot.read_buffer[0..room]) catch |err| switch (err) {
+            error.WouldBlock => return,
+            else => return close_slot(server, slot),
+        };
+
+        server.counters.bytes_read_total += received;
+        slot.deadline_ms = engine_module.now_ms() + server.options.request_timeout_ms;
+
+        if (!feed(server, slot, slot.read_buffer[0..received])) {
+            return;
+        }
+    }
+
+    if (slot.body_left == 0) {
+        server.stream_hooks.?.end(server, slot);
+    }
 }
 
 pub fn respond_error(server: *Engine, slot: *Slot, status: Status) void {
@@ -252,6 +345,14 @@ pub fn close_slot(server: *Engine, slot: *Slot) void {
     std.debug.assert(server.free_count < server.slots.len);
 
     clear_pending(server, slot);
+
+    if (slot.stream_state != null) {
+        server.stream_hooks.?.abort(server, slot);
+    }
+
+    slot.stream_state = null;
+    slot.stream = null;
+    slot.body_left = 0;
     server.loop.forget(slot.fd);
     socket.close(slot.fd);
     slot.state = .free;

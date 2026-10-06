@@ -47,6 +47,8 @@ pub const params_max: u32 = 8;
 pub const segments_max: u32 = 32;
 /// Longest registerable pattern, asserted at registration time.
 pub const pattern_len_max: u32 = 256;
+/// Most streamed routes one router can hold.
+pub const streams_max: u32 = 16;
 
 /// The `:param` captures of a matched route, in pattern order.
 pub const Params = struct {
@@ -156,6 +158,33 @@ pub fn Router(comptime Context: type) type {
             handler: Handler,
         };
 
+        /// A route whose body is handed over as it arrives instead of buffered whole:
+        /// an upload larger than a connection's read buffer. The engine reads the body
+        /// in buffer-sized pieces, so it never holds more than one.
+        ///
+        /// `open` runs, inside the middleware chain, once the head is in: it reads what
+        /// it needs from the request (the head is gone once the body arrives) and either
+        /// answers through `res` and returns null (refused; the connection closes), or
+        /// returns its own state, which `write`, then `finish` or `abort`, are handed.
+        /// `finish` answers once the whole body is in; its response is written as it is,
+        /// without middleware. `abort` is for a body that never completes: a closed or
+        /// stalled connection, a failed `write`. The state is the stream's to free in
+        /// `finish` and `abort`.
+        pub const Stream = struct {
+            /// The largest body taken; a longer declared one is refused with 413.
+            bytes_max: u64,
+            open: *const fn (req: *Request, res: *Response, ctx: *Context) anyerror!?*anyopaque,
+            write: *const fn (state: *anyopaque, bytes: []const u8) anyerror!void,
+            finish: *const fn (state: *anyopaque, res: *Response, ctx: *Context) anyerror!void,
+            abort: *const fn (state: *anyopaque) void,
+        };
+
+        const StreamRoute = struct {
+            method: Method,
+            pattern: []const u8,
+            stream: *const Stream,
+        };
+
         /// The continuation handed to middleware: `run` invokes the rest of the
         /// chain, ending at the matched handler.
         pub const Next = struct {
@@ -197,6 +226,9 @@ pub fn Router(comptime Context: type) type {
         middleware: [middleware_max]Middleware = undefined,
         /// How many middleware are registered.
         middleware_len: u32 = 0,
+        /// The streamed routes, `streams[0..streams_len]`, matched before the others.
+        streams: [streams_max]StreamRoute = undefined,
+        streams_len: u32 = 0,
         /// Handler for requests no route matches. Replace it to customize the 404.
         not_found: Handler = &default_not_found,
 
@@ -244,6 +276,42 @@ pub fn Router(comptime Context: type) type {
                 .handler = handler,
             };
             router.routes_len += 1;
+        }
+
+        /// Registers a route whose body arrives as a stream; see `Stream`.
+        pub fn stream(router: *Self, method: Method, pattern: []const u8, handlers: *const Stream) void {
+            std.debug.assert(router.streams_len < streams_max);
+            std.debug.assert(pattern.len > 0 and pattern.len <= pattern_len_max);
+            std.debug.assert(pattern[0] == '/');
+            std.debug.assert(method != .get and method != .head);
+
+            router.streams[router.streams_len] = .{
+                .method = method,
+                .pattern = pattern,
+                .stream = handlers,
+            };
+            router.streams_len += 1;
+        }
+
+        /// The streamed route `req` is for, its params filled; null for any other.
+        pub fn resolve_stream(router: *const Self, req: *Request) ?*const Stream {
+            std.debug.assert(router.streams_len <= streams_max);
+            std.debug.assert(req.inner.path.len > 0);
+
+            for (router.streams[0..router.streams_len]) |route| {
+                if (route.method != req.inner.method) {
+                    continue;
+                }
+
+                var params: Params = .{};
+
+                if (match(route.pattern, req.inner.path, &params)) {
+                    req.params = params;
+                    return route.stream;
+                }
+            }
+
+            return null;
         }
 
         /// Appends `middleware` to the chain wrapped around every dispatch.

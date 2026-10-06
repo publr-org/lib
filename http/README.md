@@ -270,7 +270,12 @@ them, so they are worth knowing before you write one:
   message fragmentation and no permessage-deflate in v1.
 - A request (head + body) must fit `--request-bytes-max`; a response must fit
   `--response-bytes-max`. The limits are the contract: oversized traffic gets 431/413,
-  never a partial read.
+  never a partial read. The one exception is a streamed route
+  (`router.stream(.post, "/upload", &handlers)`): its body may be as large as the route
+  says, and arrives at the handler a read buffer at a time (`open` with the head, then
+  `write` per piece, then `finish` to answer, or `abort` when the connection goes),
+  so an upload of any size costs one buffer. A stream's answer is written without
+  middleware.
 - Single threaded and single process by design, permanently: no locks, no data races,
   and the shared arena plus every state-machine assertion depend on it. One instance
   is one core; everything in it — counters, WebSocket rooms, app state — is globally

@@ -229,7 +229,7 @@ pub const Phase = enum {
     stopped,
 };
 
-const State = enum { free, reading, writing, upgraded };
+const State = enum { free, reading, streaming, writing, upgraded };
 
 /// One connection's state from accept to close — the engine-side record an extension
 /// works with after taking the connection over. Slots are preallocated, one per
@@ -276,7 +276,28 @@ pub const Slot = struct {
     deadline_ms: i64 = 0,
     /// Requests served on this connection, against `requests_per_connection_max`.
     served: u32 = 0,
+    /// While `.streaming`: body bytes still to come.
+    body_left: u64 = 0,
+    /// While `.streaming`: the app layer's route and the stream's own state.
+    stream: ?*const anyopaque = null,
+    stream_state: ?*anyopaque = null,
 };
+
+/// What the app layer does with a request whose head is in, before its body: a streamed
+/// route takes the body as it arrives (see `Router.Stream`).
+pub const StreamHooks = struct {
+    /// `none`: not a streamed route, buffer it as usual; `streaming`: the slot now
+    /// streams; `answered`: refused, a response is on its way and the connection closes.
+    head: *const fn (server: *Engine, slot: *Slot, request: *const request_module.Request) HeadAnswer,
+    /// A piece of the body; false when the stream failed (it has been aborted).
+    data: *const fn (server: *Engine, slot: *Slot, bytes: []const u8) bool,
+    /// The whole body is in: answer, and start writing.
+    end: *const fn (server: *Engine, slot: *Slot) void,
+    /// The connection is going before the body ended.
+    abort: *const fn (server: *Engine, slot: *Slot) void,
+};
+
+pub const HeadAnswer = enum { none, streaming, answered };
 
 /// Most extensions one server can register.
 const extensions_max: u32 = 8;
@@ -367,6 +388,8 @@ pub const Engine = struct {
     shutdown_deadline_ms: i64 = 0,
     /// The app layer's request entry point — server.zig's shim.
     on_request: OnRequest,
+    /// The app layer's streamed routes, set by server.zig after init.
+    stream_hooks: ?*const StreamHooks = null,
     /// The extensions registered at init, in declaration order, with their state.
     registered: [extensions_max]Registered = undefined,
     /// How many of `registered` are live.
@@ -623,6 +646,9 @@ pub const Engine = struct {
         switch (slot.state) {
             .reading => if (item.readable or item.eof) {
                 connection.service_reading(server, slot);
+            },
+            .streaming => if (item.readable or item.eof) {
+                connection.service_streaming(server, slot);
             },
             .writing => if (item.writable) {
                 connection.service_writing(server, slot);

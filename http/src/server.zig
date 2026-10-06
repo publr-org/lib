@@ -175,6 +175,8 @@ pub fn Server(comptime extension_modules: anytype) type {
                 .engine = try Engine.init(gpa, options, &vtables, &on_request),
             };
 
+            app.engine.stream_hooks = &stream_hooks;
+
             inline for (mod_fields, 0..) |field, index| {
                 @field(app.extension_states, field.name) =
                     @ptrCast(@alignCast(app.engine.registered[index].context));
@@ -234,6 +236,8 @@ pub fn Server(comptime extension_modules: anytype) type {
         /// ```
         pub fn handle(app: *App, arena: std.mem.Allocator, req: *router_module.Request) Response {
             var response = response_module.init(arena);
+            // No connection: a streamed route gets the whole body in one piece, at once.
+            var slot: engine_module.Slot = .{ .read_buffer = &.{}, .write_buffer = &.{} };
             var ctx: Context = .{
                 .arena = arena,
                 .user_data = app.user_data,
@@ -241,13 +245,223 @@ pub fn Server(comptime extension_modules: anytype) type {
                 .options = &app.engine.options,
                 .extensions = app.extension_states,
                 .engine = &app.engine,
-                .slot = undefined,
+                .slot = &slot,
             };
 
             app.engine.counters.requests_total += 1;
+
+            if (stream_of(app, req)) |stream| {
+                stream_whole(app, stream, req, &response, &ctx);
+                return response;
+            }
+
             dispatch_into(app, req, &response, &ctx);
 
             return response;
+        }
+
+        /// The streamed route `req` is for, if any, under the base path.
+        fn stream_of(app: *App, req: *router_module.Request) ?*const App.Router.Stream {
+            if (app.routes.streams_len == 0) {
+                return null;
+            }
+
+            var stripped: request_module.Request = req.inner.*;
+
+            if (!within_base(app.path_base, req, &stripped)) {
+                return null;
+            }
+
+            const original = req.inner;
+            req.inner = &stripped;
+            defer req.inner = original;
+
+            const found = app.routes.resolve_stream(req) orelse return null;
+
+            req.inner = original;
+
+            return found;
+        }
+
+        /// An offline streamed request: open, the body in one piece, finish.
+        fn stream_whole(
+            app: *App,
+            stream: *const App.Router.Stream,
+            req: *router_module.Request,
+            response: *Response,
+            ctx: *Context,
+        ) void {
+            if (req.body.len > stream.bytes_max) {
+                response.text(.payload_too_large, "Payload Too Large") catch {};
+                return;
+            }
+
+            const state = open_stream(app, stream, req, response, ctx) orelse return;
+
+            stream.write(state, req.body) catch {
+                stream.abort(state);
+                server_error(response, ctx);
+                return;
+            };
+            stream.finish(state, response, ctx) catch {
+                server_error(response, ctx);
+            };
+        }
+
+        /// Runs `open` inside the middleware chain; the stream's state, or null when it
+        /// (or a middleware) answered instead.
+        fn open_stream(
+            app: *App,
+            stream: *const App.Router.Stream,
+            req: *router_module.Request,
+            response: *Response,
+            ctx: *Context,
+        ) ?*anyopaque {
+            ctx.slot.stream = stream;
+            ctx.slot.stream_state = null;
+
+            var stripped: request_module.Request = req.inner.*;
+            _ = within_base(app.path_base, req, &stripped);
+            const original = req.inner;
+            req.inner = &stripped;
+            defer req.inner = original;
+
+            const next: App.Router.Next = .{ .router = &app.routes, .index = 0, .handler = &open_handler };
+
+            next.run(req, response, ctx) catch |err| {
+                std.log.scoped(.publr_http).debug("stream open error: {s} -> {t}", .{ req.inner.path, err });
+                if (ctx.slot.stream_state) |state| stream.abort(state);
+                ctx.slot.stream_state = null;
+                server_error(response, ctx);
+            };
+
+            return ctx.slot.stream_state;
+        }
+
+        fn open_handler(req: *router_module.Request, res: *Response, ctx: *Context) anyerror!void {
+            const stream: *const App.Router.Stream = @ptrCast(@alignCast(ctx.slot.stream.?));
+
+            ctx.slot.stream_state = try stream.open(req, res, ctx);
+        }
+
+        fn server_error(response: *Response, ctx: *Context) void {
+            response.* = response_module.init(ctx.arena);
+            response.text(.internal_server_error, "Internal Server Error") catch {
+                response.body = "";
+                response.status = .internal_server_error;
+            };
+        }
+
+        const stream_hooks: engine_module.StreamHooks = .{
+            .head = &stream_head,
+            .data = &stream_data,
+            .end = &stream_end,
+            .abort = &stream_abort,
+        };
+
+        fn context_for(engine: *Engine, slot: *engine_module.Slot, arena: std.mem.Allocator) Context {
+            const app: *App = @fieldParentPtr("engine", engine);
+
+            return .{
+                .arena = arena,
+                .user_data = app.user_data,
+                .counters = &engine.counters,
+                .options = &engine.options,
+                .extensions = app.extension_states,
+                .engine = engine,
+                .slot = slot,
+            };
+        }
+
+        fn stream_head(
+            engine: *Engine,
+            slot: *engine_module.Slot,
+            request: *const request_module.Request,
+        ) engine_module.HeadAnswer {
+            const app: *App = @fieldParentPtr("engine", engine);
+            var req: router_module.Request = .{ .inner = request, .body = "" };
+            const stream = stream_of(app, &req) orelse return .none;
+            var arena_state = std.heap.FixedBufferAllocator.init(engine.arena_buffer);
+            const arena = arena_state.allocator();
+            var response = response_module.init(arena);
+            var ctx = context_for(engine, slot, arena);
+
+            if (request.content_length > stream.bytes_max) {
+                connection.respond_error(engine, slot, .payload_too_large);
+                return .answered;
+            }
+
+            if (open_stream(app, stream, &req, &response, &ctx) != null) {
+                return .streaming;
+            }
+
+            if (app.on_response) |on_response| on_response(&req, &response);
+            send(engine, slot, &response, false, slot.read_len);
+
+            return .answered;
+        }
+
+        fn stream_data(engine: *Engine, slot: *engine_module.Slot, bytes: []const u8) bool {
+            _ = engine;
+            const stream: *const App.Router.Stream = @ptrCast(@alignCast(slot.stream.?));
+            const state = slot.stream_state.?;
+
+            stream.write(state, bytes) catch |err| {
+                std.log.scoped(.publr_http).debug("stream write error: {t}", .{err});
+                stream.abort(state);
+                slot.stream_state = null;
+                return false;
+            };
+
+            return true;
+        }
+
+        fn stream_end(engine: *Engine, slot: *engine_module.Slot) void {
+            const stream: *const App.Router.Stream = @ptrCast(@alignCast(slot.stream.?));
+            const state = slot.stream_state.?;
+            var arena_state = std.heap.FixedBufferAllocator.init(engine.arena_buffer);
+            const arena = arena_state.allocator();
+            var response = response_module.init(arena);
+            var ctx = context_for(engine, slot, arena);
+
+            slot.stream_state = null;
+            stream.finish(state, &response, &ctx) catch |err| {
+                std.log.scoped(.publr_http).debug("stream finish error: {t}", .{err});
+                server_error(&response, &ctx);
+            };
+
+            const draining = engine.phase != .running;
+            const worn_out = slot.served >= engine_module.requests_per_connection_max;
+
+            slot.state = .reading;
+            send(engine, slot, &response, slot.keep_alive and !draining and !worn_out, 0);
+        }
+
+        fn stream_abort(engine: *Engine, slot: *engine_module.Slot) void {
+            _ = engine;
+            const stream: *const App.Router.Stream = @ptrCast(@alignCast(slot.stream.?));
+
+            if (slot.stream_state) |state| stream.abort(state);
+            slot.stream_state = null;
+        }
+
+        /// Serializes and starts writing a response the slot answers with.
+        fn send(
+            engine: *Engine,
+            slot: *engine_module.Slot,
+            response: *Response,
+            keep_alive: bool,
+            consumed: u32,
+        ) void {
+            response.keep_alive = keep_alive;
+
+            var writer: std.Io.Writer = .fixed(slot.write_buffer);
+            response_module.write_to(response, &writer, false) catch {
+                connection.respond_error(engine, slot, .internal_server_error);
+                return;
+            };
+
+            connection.start_writing(engine, slot, @intCast(writer.buffered().len), keep_alive, consumed);
         }
 
         /// The port actually bound — the answer when `Options.port` was 0 and the
@@ -784,4 +998,166 @@ test "graceful shutdown drains and stops" {
     try std.testing.expectEqual(engine_module.Phase.draining, app.engine.phase);
     try harness.serve_until(&app, 5);
     try std.testing.expectEqual(engine_module.Phase.stopped, app.engine.phase);
+}
+
+const tally_stream = struct {
+    const Tally = struct {
+        opened: u32 = 0,
+        bytes: u64 = 0,
+        sum: u64 = 0,
+        finished: u32 = 0,
+        aborted: u32 = 0,
+    };
+
+    fn open(req: *Request, res: *Response, ctx: *TestApp.Context) anyerror!?*anyopaque {
+        if (req.header("x-refuse") != null) {
+            try res.text(.forbidden, "refused");
+            return null;
+        }
+
+        const tally: *Tally = @ptrCast(@alignCast(ctx.user_data.?));
+        tally.opened += 1;
+        return tally;
+    }
+
+    fn write(state: *anyopaque, bytes: []const u8) anyerror!void {
+        const tally: *Tally = @ptrCast(@alignCast(state));
+        tally.bytes += bytes.len;
+        for (bytes) |byte| tally.sum += byte;
+    }
+
+    fn finish(state: *anyopaque, res: *Response, ctx: *TestApp.Context) anyerror!void {
+        const tally: *Tally = @ptrCast(@alignCast(state));
+        tally.finished += 1;
+        try res.text(.created, try std.fmt.allocPrint(ctx.arena, "got {d}", .{tally.bytes}));
+    }
+
+    fn abort(state: *anyopaque) void {
+        const tally: *Tally = @ptrCast(@alignCast(state));
+        tally.aborted += 1;
+    }
+
+    const handlers: TestApp.Router.Stream = .{
+        .bytes_max = 1 << 20,
+        .open = &open,
+        .write = &write,
+        .finish = &finish,
+        .abort = &abort,
+    };
+};
+
+test "a streamed route takes a body far larger than the read buffer, piece by piece" {
+    var app = try test_app(4);
+    defer app.deinit();
+
+    var tally: tally_stream.Tally = .{};
+    app.user_data = &tally;
+    app.router().stream(.post, "/upload", &tally_stream.handlers);
+
+    const body_len: u32 = 200 << 10;
+    const body = try std.testing.allocator.alloc(u8, body_len);
+    defer std.testing.allocator.free(body);
+    for (body, 0..) |*byte, index| byte.* = @intCast(index % 251);
+
+    const head = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "POST /upload HTTP/1.1\r\nHost: h\r\nContent-Length: {d}\r\n\r\n",
+        .{body_len},
+    );
+    defer std.testing.allocator.free(head);
+    const request = try std.mem.concat(std.testing.allocator, u8, &.{
+        head, body, "GET /after HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n",
+    });
+    defer std.testing.allocator.free(request);
+
+    var client: harness.Client = .{ .port = try app.engine.bound_port(), .request = request };
+    const thread = try std.Thread.spawn(.{}, harness.Client.run, .{&client});
+    try harness.serve_until(&app, 200);
+    thread.join();
+
+    var sum: u64 = 0;
+    for (body) |byte| sum += byte;
+
+    const output = client.response[0..client.response_len];
+    try std.testing.expect(!client.failed);
+    try std.testing.expect(std.mem.indexOf(u8, output, "HTTP/1.1 201 Created") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "got 204800") != null);
+    try std.testing.expect(std.mem.endsWith(u8, output, "hello after"));
+    try std.testing.expectEqual(@as(u64, body_len), tally.bytes);
+    try std.testing.expectEqual(sum, tally.sum);
+    try std.testing.expectEqual(@as(u32, 1), tally.finished);
+    try std.testing.expectEqual(@as(u32, 0), tally.aborted);
+}
+
+test "a streamed route refuses in open, and past its size, without reading the body" {
+    var app = try test_app(4);
+    defer app.deinit();
+
+    var tally: tally_stream.Tally = .{};
+    app.user_data = &tally;
+    app.router().stream(.post, "/upload", &tally_stream.handlers);
+
+    var refused: harness.Client = .{
+        .port = try app.engine.bound_port(),
+        .request = "POST /upload HTTP/1.1\r\nHost: h\r\nX-Refuse: 1\r\nContent-Length: 5\r\n\r\nhello",
+    };
+    const first = try std.Thread.spawn(.{}, harness.Client.run, .{&refused});
+    try harness.serve_until(&app, 50);
+    first.join();
+
+    try std.testing.expect(std.mem.indexOf(u8, refused.response[0..refused.response_len], "403") != null);
+
+    var large: harness.Client = .{
+        .port = try app.engine.bound_port(),
+        .request = "POST /upload HTTP/1.1\r\nHost: h\r\nContent-Length: 99999999\r\n\r\n",
+    };
+    const second = try std.Thread.spawn(.{}, harness.Client.run, .{&large});
+    try harness.serve_until(&app, 50);
+    second.join();
+
+    try std.testing.expect(std.mem.indexOf(u8, large.response[0..large.response_len], "413") != null);
+    try std.testing.expectEqual(@as(u32, 0), tally.opened);
+    try std.testing.expectEqual(@as(u64, 0), tally.bytes);
+}
+
+test "a stream cut off before its body ends is aborted" {
+    var app = try test_app(4);
+    defer app.deinit();
+
+    var tally: tally_stream.Tally = .{};
+    app.user_data = &tally;
+    app.router().stream(.post, "/upload", &tally_stream.handlers);
+
+    var client: harness.Client = .{
+        .port = try app.engine.bound_port(),
+        .request = "POST /upload HTTP/1.1\r\nHost: h\r\nContent-Length: 50000\r\n\r\nonly this",
+    };
+    // The client stops writing and waits; the request's deadline closes the slot, or the
+    // client giving up does. Either way the stream never finishes.
+    app.engine.options.request_timeout_ms = 1000;
+    const thread = try std.Thread.spawn(.{}, harness.Client.run, .{&client});
+    try harness.serve_until(&app, 120);
+    thread.join();
+
+    try std.testing.expectEqual(@as(u32, 1), tally.opened);
+    try std.testing.expectEqual(@as(u32, 1), tally.aborted);
+    try std.testing.expectEqual(@as(u32, 0), tally.finished);
+}
+
+test "an offline app streams a body in one piece" {
+    var app = TestApp.offline(.{});
+    var tally: tally_stream.Tally = .{};
+    app.user_data = &tally;
+    app.router().stream(.post, "/upload", &tally_stream.handlers);
+
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const head = try request_module.parse("POST /upload HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n");
+    var request: Request = .{ .inner = &head.complete, .body = "abc" };
+    const answered = app.handle(arena_state.allocator(), &request);
+
+    try std.testing.expectEqual(Status.created, answered.status);
+    try std.testing.expectEqualStrings("got 3", answered.body);
+    try std.testing.expectEqual(@as(u32, 1), tally.finished);
 }

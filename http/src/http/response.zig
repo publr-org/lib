@@ -15,7 +15,7 @@ pub const header_name_len_max: u32 = 128;
 pub const header_value_len_max: u32 = 8 << 10;
 /// Largest settable body. The effective limit is usually the server's per-slot write
 /// buffer (`Options.response_bytes_max`), enforced at serialization time.
-pub const body_bytes_max: u32 = 8 << 20;
+pub const body_bytes_max: u32 = 16 << 20;
 
 /// One response header, both halves borrowed from whoever set them.
 pub const Header = struct {
