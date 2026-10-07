@@ -38,6 +38,9 @@ with the same folder. About 32 MB on disk; the archive in the binary is about 8 
 Zig's own `build.zig`, full and without LLVM (`-Dno-lib`): its wasm-only preset would be a
 quarter of the size, but 0.16's lacks the `legalize` pass the wasm backend needs. The
 build compiles it once (about two minutes); Zig's cache keeps it.
+`zig build toolchain -Dtarget=<target>` writes the archive to `zig-out/`, and
+`-Dtoolchain-archive=<file>` uses such an archive instead of building one, so CI builds it
+once per target and Zig.
 
 ## Tests
 

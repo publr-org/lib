@@ -11,7 +11,47 @@ pub const Toolchain = struct {
 pub fn build(b: *std.Build) Toolchain {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const prebuilt = b.option(
+        []const u8,
+        "toolchain-archive",
+        "A toolchain.tar.gz built before for the same target and Zig, used instead of building one",
+    );
+    const pack = b.addExecutable(.{
+        .name = "pack",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build/pack.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    // Consumers pack their own files the same way (`dependency.artifact("pack")`).
+    b.installArtifact(pack);
 
+    const archive: std.Build.LazyPath = if (prebuilt) |path|
+        .{ .cwd_relative = path }
+    else
+        build_archive(b, target, pack);
+
+    // `zig build toolchain -Dtarget=…` writes the archive to zig-out/, for CI to keep.
+    const install = b.addInstallFile(archive, "toolchain.tar.gz");
+    b.step("toolchain", "Build the toolchain archive into zig-out/").dependOn(&install.step);
+
+    const module = b.addModule("publr_zig", .{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    module.addAnonymousImport("toolchain_archive", .{ .root_source_file = archive });
+
+    return .{ .module = module, .archive = archive };
+}
+
+fn build_archive(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    pack: *std.Build.Step.Compile,
+) std.Build.LazyPath {
     // Zig's own build, untouched: the full compiler, which without LLVM builds for `wasm32`
     // with its own backend. Its wasm-only preset (`-Ddev=wasm`) would be a quarter of the
     // size, but 0.16's lacks the `legalize` pass that backend needs.
@@ -37,17 +77,6 @@ pub fn build(b: *std.Build) Toolchain {
 
     compiler_rt.bundle_compiler_rt = false;
 
-    const pack = b.addExecutable(.{
-        .name = "pack",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("build/pack.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseFast,
-        }),
-    });
-    // Consumers pack their own files the same way (`dependency.artifact("pack")`).
-    b.installArtifact(pack);
-
     const run = b.addRunArtifact(pack);
     const archive = run.addOutputFileArg("toolchain.tar.gz");
 
@@ -56,15 +85,7 @@ pub fn build(b: *std.Build) Toolchain {
     run.addPrefixedDirectoryArg("lib/std/=", zig.path("lib/std"));
     add_inputs(b, run, zig, "lib/std");
 
-    const module = b.addModule("publr_zig", .{
-        .root_source_file = b.path("src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    module.addAnonymousImport("toolchain_archive", .{ .root_source_file = archive });
-
-    return .{ .module = module, .archive = archive };
+    return archive;
 }
 
 /// A folder argument is cached by its path alone: each file under `dir` is an input, so a
