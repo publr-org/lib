@@ -10,6 +10,8 @@ pub const Status = enum(u16) {
     ok = 200,
     /// A POST made something; conventionally with a `Location` header.
     created = 201,
+    /// Taken in, nothing to answer yet: a notification, work done later.
+    accepted = 202,
     /// Done, nothing to say — a DELETE, or a PUT that changed nothing visible.
     no_content = 204,
     /// A bounded byte range of a static media file.
@@ -62,6 +64,8 @@ pub const Status = enum(u16) {
     internal_server_error = 500,
     /// Engine: an unknown method, or `Transfer-Encoding`.
     not_implemented = 501,
+    /// A server this one called on the client's behalf did not answer properly.
+    bad_gateway = 502,
     /// Engine: every connection slot is busy. Sent with `Retry-After: 1` and
     /// the connection closed.
     service_unavailable = 503,
@@ -83,6 +87,7 @@ pub fn reason(status: Status) []const u8 {
     return switch (status) {
         .ok => "OK",
         .created => "Created",
+        .accepted => "Accepted",
         .no_content => "No Content",
         .partial_content => "Partial Content",
         .moved_permanently => "Moved Permanently",
@@ -107,6 +112,7 @@ pub fn reason(status: Status) []const u8 {
         .header_fields_too_large => "Request Header Fields Too Large",
         .internal_server_error => "Internal Server Error",
         .not_implemented => "Not Implemented",
+        .bad_gateway => "Bad Gateway",
         .service_unavailable => "Service Unavailable",
         .http_version_not_supported => "HTTP Version Not Supported",
     };
