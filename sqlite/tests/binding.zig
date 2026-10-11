@@ -23,7 +23,10 @@ test "open, exec, prepare, bind, step, read back" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { id: i64, name: []const u8 };
+    const Row = struct {
+        id: i64,
+        name: []const u8,
+    };
 
     var select = try db.prepare("SELECT id, name FROM t");
     defer select.finalize();
@@ -94,6 +97,63 @@ test "violated unique constraint surfaces as error.Constraint" {
     defer insert.finalize();
     try insert.bind_text(1, "taken");
     try std.testing.expectError(error.Constraint, insert.step());
+}
+
+test "a broken constraint says which rule, after its statement is finalized" {
+    var runtime = try sqlite.Runtime.init(.{});
+    defer runtime.deinit();
+
+    var db = try sqlite.Database.open(&runtime, ":memory:", .{});
+    defer db.close();
+
+    try db.exec("PRAGMA foreign_keys = ON");
+    try db.exec("CREATE TABLE p (id INTEGER PRIMARY KEY)");
+    try db.exec(
+        "CREATE TABLE t (name TEXT NOT NULL UNIQUE, size INTEGER CHECK (size > 0), " ++
+            "p INTEGER REFERENCES p(id)) STRICT",
+    );
+    try db.exec("INSERT INTO t (name, size) VALUES ('taken', 1)");
+
+    const cases = [_]struct {
+        sql: [*:0]const u8,
+        broken: sqlite.Constraint,
+    }{
+        .{
+            .sql = "INSERT INTO t (name) VALUES ('taken')",
+            .broken = .unique,
+        },
+        .{
+            .sql = "INSERT INTO t (name) VALUES (NULL)",
+            .broken = .not_null,
+        },
+        .{
+            .sql = "INSERT INTO t (name, size) VALUES ('a', 0)",
+            .broken = .check,
+        },
+        .{
+            .sql = "INSERT INTO t (name, p) VALUES ('b', 7)",
+            .broken = .reference,
+        },
+        .{
+            .sql = "INSERT INTO t (name, size) VALUES ('c', 'big')",
+            .broken = .datatype,
+        },
+    };
+
+    inline for (cases) |case| {
+        {
+            var insert = try db.prepare(std.mem.span(case.sql));
+            defer insert.finalize();
+
+            try std.testing.expectError(error.Constraint, insert.step());
+        }
+
+        try std.testing.expectEqual(case.broken, db.constraint_broken());
+        try std.testing.expect(db.message().len > 0);
+    }
+
+    try db.exec("SELECT 1");
+    try std.testing.expectEqual(sqlite.Constraint.none, db.constraint_broken());
 }
 
 test "exec surfaces bad SQL as error.Sqlite" {
@@ -177,7 +237,9 @@ test "bind_int round-trips through a WHERE clause" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { name: []const u8 };
+    const Row = struct {
+        name: []const u8,
+    };
 
     var select = try db.prepare("SELECT name FROM t WHERE id = ?1");
     defer select.finalize();
@@ -222,7 +284,9 @@ test "bind_real, bind_null, bind_optional_text and bind_blob store what they say
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { types: []const u8 };
+    const Row = struct {
+        types: []const u8,
+    };
 
     try std.testing.expect(try types.step());
     const first = try types.read(Row, arena_state.allocator());
@@ -251,7 +315,9 @@ test "bound text is copied: the source buffer may die before step" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { name: []const u8 };
+    const Row = struct {
+        name: []const u8,
+    };
 
     var select = try db.prepare("SELECT name FROM t");
     defer select.finalize();
@@ -277,7 +343,9 @@ test "empty text binds and reads back as empty" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { name: []const u8 };
+    const Row = struct {
+        name: []const u8,
+    };
 
     var select = try db.prepare("SELECT name FROM t");
     defer select.finalize();

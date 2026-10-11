@@ -47,6 +47,12 @@ const nomem: c_int = 7; // SQLITE_NOMEM
 const dbconfig_defensive: c_int = 1010; // SQLITE_DBCONFIG_DEFENSIVE
 const readonly: c_int = 8; // SQLITE_READONLY
 const constraint: c_int = 19; // SQLITE_CONSTRAINT
+const constraint_check: c_int = 275; // SQLITE_CONSTRAINT_CHECK
+const constraint_foreign_key: c_int = 787; // SQLITE_CONSTRAINT_FOREIGNKEY
+const constraint_not_null: c_int = 1299; // SQLITE_CONSTRAINT_NOTNULL
+const constraint_primary_key: c_int = 1555; // SQLITE_CONSTRAINT_PRIMARYKEY
+const constraint_unique: c_int = 2067; // SQLITE_CONSTRAINT_UNIQUE
+const constraint_datatype: c_int = 3091; // SQLITE_CONSTRAINT_DATATYPE
 const misuse: c_int = 21; // SQLITE_MISUSE
 const interrupt: c_int = 9; // SQLITE_INTERRUPT
 const toobig: c_int = 18; // SQLITE_TOOBIG
@@ -91,6 +97,7 @@ extern fn sqlite3_progress_handler(
 ) void;
 extern fn sqlite3_db_config(db: ?*DbHandle, op: c_int, ...) c_int;
 extern fn sqlite3_errcode(db: ?*DbHandle) c_int;
+extern fn sqlite3_extended_errcode(db: ?*DbHandle) c_int;
 extern fn sqlite3_errmsg(db: ?*DbHandle) [*:0]const u8;
 extern fn sqlite3_exec(
     db: ?*DbHandle,
@@ -196,6 +203,9 @@ pub const Error = error{
     TooBig,
 };
 
+/// The rule an `error.Constraint` broke (`Database.constraint_broken`).
+pub const Constraint = enum { none, unique, reference, not_null, check, datatype, other };
+
 /// The minimum size of a fixed heap handed to `Runtime.init`.
 pub const heap_bytes_min: u64 = 1 << 20;
 
@@ -271,7 +281,9 @@ pub const Runtime = struct {
             return error.Sqlite;
         }
 
-        return .{ .heap = options.heap };
+        return .{
+            .heap = options.heap,
+        };
     }
 
     /// Shuts the engine down and poisons the value. Every `Database` must be
@@ -373,7 +385,10 @@ pub const Database = struct {
         const timeout_code = sqlite3_busy_timeout(handle, timeout);
         std.debug.assert(timeout_code == ok);
 
-        return .{ .runtime = runtime, .handle = handle.? };
+        return .{
+            .runtime = runtime,
+            .handle = handle.?,
+        };
     }
 
     /// Closes the connection and poisons the value. Every `Statement` must be
@@ -555,7 +570,10 @@ pub const Database = struct {
             return db.fail(code);
         }
 
-        return .{ .db = db.handle, .handle = handle.? };
+        return .{
+            .db = db.handle,
+            .handle = handle.?,
+        };
     }
 
     /// Rows changed by the most recent INSERT, UPDATE, or DELETE on this
@@ -579,6 +597,46 @@ pub const Database = struct {
     /// ```
     pub fn last_insert_rowid(db: *Database) i64 {
         return sqlite3_last_insert_rowid(db.handle);
+    }
+
+    /// Which rule the last `error.Constraint` on this connection broke: read it before
+    /// anything else runs on the connection (a rollback clears it).
+    ///
+    /// ```zig
+    /// insert.exec() catch |err| switch (err) {
+    ///     error.Constraint => if (db.constraint_broken() == .unique) return taken(),
+    ///     else => return err,
+    /// };
+    /// ```
+    ///
+    /// A uniqueness or a reference is an outcome a caller can be told about (taken, still
+    /// in use); a NOT NULL, a CHECK or a column's type is code and schema disagreeing.
+    pub fn constraint_broken(db: *Database) Constraint {
+        const code = sqlite3_extended_errcode(db.handle);
+
+        std.debug.assert(code >= 0);
+
+        if (code & 0xff != constraint) {
+            return .none;
+        }
+
+        return switch (code) {
+            constraint_unique, constraint_primary_key => .unique,
+            constraint_foreign_key => .reference,
+            constraint_not_null => .not_null,
+            constraint_check => .check,
+            constraint_datatype => .datatype,
+            else => .other,
+        };
+    }
+
+    /// SQLite's message for the last failure on this connection, valid until its next call.
+    pub fn message(db: *Database) []const u8 {
+        const text = std.mem.span(sqlite3_errmsg(db.handle));
+
+        std.debug.assert(text.len <= std.math.maxInt(u32));
+
+        return text;
     }
 
     /// The whole database as one byte string — the file SQLite would write —
@@ -970,12 +1028,16 @@ pub const Statement = struct {
             f64 => stmt.column_real(column),
             bool => stmt.column_int(column) != 0,
             []const u8 => try stmt.column_text(column, arena),
-            Blob => .{ .bytes = try stmt.column_blob(column, arena) },
+            Blob => .{
+                .bytes = try stmt.column_blob(column, arena),
+            },
             Any => try stmt.column_any(column, arena),
             ?i64 => if (is_null) null else stmt.column_int(column),
             ?f64 => if (is_null) null else stmt.column_real(column),
             ?[]const u8 => if (is_null) null else try stmt.column_text(column, arena),
-            ?Blob => if (is_null) null else .{ .bytes = try stmt.column_blob(column, arena) },
+            ?Blob => if (is_null) null else .{
+                .bytes = try stmt.column_blob(column, arena),
+            },
             else => @compileError("publr_sqlite: a row field must be i64, f64, bool, " ++
                 "[]const u8, Blob, Any or an optional of one, found " ++ @typeName(Cell)),
         };
@@ -983,10 +1045,18 @@ pub const Statement = struct {
 
     fn column_any(stmt: *Statement, column: u31, arena: std.mem.Allocator) Error!Any {
         return switch (sqlite3_column_type(stmt.handle, column)) {
-            type_integer => .{ .integer = stmt.column_int(column) },
-            type_float => .{ .real = stmt.column_real(column) },
-            type_text => .{ .text = try stmt.column_text(column, arena) },
-            type_blob => .{ .blob = try stmt.column_blob(column, arena) },
+            type_integer => .{
+                .integer = stmt.column_int(column),
+            },
+            type_float => .{
+                .real = stmt.column_real(column),
+            },
+            type_text => .{
+                .text = try stmt.column_text(column, arena),
+            },
+            type_blob => .{
+                .blob = try stmt.column_blob(column, arena),
+            },
             else => .null,
         };
     }
