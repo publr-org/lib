@@ -8,7 +8,10 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
         .name = "guest",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/guest.zig"),
-            .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding }),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .wasm32,
+                .os_tag = .freestanding,
+            }),
             .optimize = .ReleaseSmall,
         }),
     });
@@ -20,11 +23,20 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
         .root_source_file = b.path("tests/root.zig"),
         .target = library.resolved_target.?,
         .optimize = library.optimize.?,
-        .imports = &.{.{ .name = "publr_wasm", .module = library }},
+        .imports = &.{.{
+            .name = "publr_wasm",
+            .module = library,
+        }},
     });
 
-    integration.addAnonymousImport("guest.wasm", .{ .root_source_file = guest.getEmittedBin() });
+    integration.addAnonymousImport("guest.wasm", .{
+        .root_source_file = guest.getEmittedBin(),
+    });
 
-    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = library })).step);
-    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = integration })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .root_module = library,
+    })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .root_module = integration,
+    })).step);
 }

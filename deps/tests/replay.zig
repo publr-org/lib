@@ -3,7 +3,10 @@ const helper = @import("helper.zig");
 
 test "replay survives rebuild consumption, rejects open transactions and excludes rollback" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 0, .replay_max = 2 });
+    try world.open(.{
+        .quiet_ms = 0,
+        .replay_max = 2,
+    });
     defer world.close();
     var transaction = try world.db.transaction();
     try world.index.invalidate(&.{"record:rolled-back"}, 0);

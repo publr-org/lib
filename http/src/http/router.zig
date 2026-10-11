@@ -358,7 +358,11 @@ pub fn Router(comptime Context: type) type {
 /// response writer suppresses the body. `router` is a `*const Router(Context)`.
 pub fn dispatch(router: anytype, req: *Request, res: *Response, ctx: anytype) anyerror!void {
     const handler = router.resolve(req) orelse router.not_found;
-    const next: @TypeOf(router.*).Next = .{ .router = router, .index = 0, .handler = handler };
+    const next: @TypeOf(router.*).Next = .{
+        .router = router,
+        .index = 0,
+        .handler = handler,
+    };
 
     return next.run(req, res, ctx);
 }
@@ -397,7 +401,10 @@ fn match(pattern: []const u8, path: []const u8, params: *Params) bool {
                 return false;
             }
 
-            params.entries[params.len] = .{ .name = expected[1..], .value = actual };
+            params.entries[params.len] = .{
+                .name = expected[1..],
+                .value = actual,
+            };
             params.len += 1;
         } else if (!std.mem.eql(u8, expected, actual)) {
             return false;
@@ -407,7 +414,9 @@ fn match(pattern: []const u8, path: []const u8, params: *Params) bool {
     return path_segments.next() == null;
 }
 
-const TestContext = struct { marker: u32 = 0 };
+const TestContext = struct {
+    marker: u32 = 0,
+};
 const TestRouter = Router(TestContext);
 
 const dispatch_test = struct {
@@ -517,7 +526,10 @@ test "dispatch runs middleware around the matched handler in registration order"
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = response_module.init(arena_state.allocator());
     const inner = test_inner_request(.get, "/a");
-    var request: Request = .{ .inner = &inner, .body = "" };
+    var request: Request = .{
+        .inner = &inner,
+        .body = "",
+    };
     var ctx: TestContext = .{};
 
     dispatch_test.order_len = 0;
@@ -537,7 +549,10 @@ test "middleware can short-circuit by not calling next" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = response_module.init(arena_state.allocator());
     const inner = test_inner_request(.get, "/a");
-    var request: Request = .{ .inner = &inner, .body = "" };
+    var request: Request = .{
+        .inner = &inner,
+        .body = "",
+    };
     var ctx: TestContext = .{};
 
     dispatch_test.order_len = 0;
@@ -556,7 +571,10 @@ test "HEAD dispatches to the GET route" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = response_module.init(arena_state.allocator());
     const inner = test_inner_request(.head, "/a");
-    var request: Request = .{ .inner = &inner, .body = "" };
+    var request: Request = .{
+        .inner = &inner,
+        .body = "",
+    };
     var ctx: TestContext = .{};
 
     dispatch_test.order_len = 0;
@@ -574,7 +592,10 @@ test "unmatched requests get the default, replaceable not_found handler" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = response_module.init(arena_state.allocator());
     const inner = test_inner_request(.get, "/missing");
-    var request: Request = .{ .inner = &inner, .body = "" };
+    var request: Request = .{
+        .inner = &inner,
+        .body = "",
+    };
     var ctx: TestContext = .{};
 
     try dispatch(&router, &request, &response, &ctx);
@@ -595,7 +616,10 @@ test "the first matching route in registration order wins" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = response_module.init(arena_state.allocator());
     const inner = test_inner_request(.get, "/x/static");
-    var request: Request = .{ .inner = &inner, .body = "" };
+    var request: Request = .{
+        .inner = &inner,
+        .body = "",
+    };
     var ctx: TestContext = .{};
 
     try dispatch(&router, &request, &response, &ctx);

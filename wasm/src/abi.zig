@@ -16,7 +16,10 @@ pub const NativeSymbol = extern struct {
 };
 
 pub const MemAllocOption = extern union {
-    pool: extern struct { heap_buf: ?*anyopaque, heap_size: u32 },
+    pool: extern struct {
+        heap_buf: ?*anyopaque,
+        heap_size: u32,
+    },
     allocator: extern struct {
         malloc_func: ?*anyopaque,
         realloc_func: ?*anyopaque,

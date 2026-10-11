@@ -35,7 +35,12 @@ pub fn postfix(parser: *Parser, start: Index, depth: u32) Error!Index {
                 _ = parser.take();
                 const called = try call_of(parser, parser.take(), depth);
 
-                base = try parser.add(.{ .pipe = .{ .base = base, .call = called } });
+                base = try parser.add(.{
+                    .pipe = .{
+                        .base = base,
+                        .call = called,
+                    },
+                });
                 continue;
             }
 
@@ -57,7 +62,12 @@ pub fn close(parser: *Parser, base: Index, steps: *std.ArrayList(Step)) Error!In
 
     steps.* = .empty;
 
-    return parser.add(.{ .traversal = .{ .base = base, .steps = taken } });
+    return parser.add(.{
+        .traversal = .{
+            .base = base,
+            .steps = taken,
+        },
+    });
 }
 
 /// One traversal step, or null when none follows.
@@ -72,16 +82,22 @@ pub fn step(parser: *Parser, depth: u32) Error!?Step {
 
             _ = parser.take();
 
-            return .{ .attribute = parser.take().text };
+            return .{
+                .attribute = parser.take().text,
+            };
         },
         .arrow => {
             _ = parser.take();
 
             if (parser.peek().kind == .identifier) {
-                return .{ .dereference = parser.take().text };
+                return .{
+                    .dereference = parser.take().text,
+                };
             }
 
-            return .{ .dereference = null };
+            return .{
+                .dereference = null,
+            };
         },
         .left_bracket => {
             _ = parser.take();
@@ -91,7 +107,9 @@ pub fn step(parser: *Parser, depth: u32) Error!?Step {
         .left_brace => {
             _ = parser.take();
 
-            return .{ .projection = try attributes(parser, depth) };
+            return .{
+                .projection = try attributes(parser, depth),
+            };
         },
         .pipe => {
             if (parser.peek_at(1).kind != .left_brace) {
@@ -100,7 +118,9 @@ pub fn step(parser: *Parser, depth: u32) Error!?Step {
 
             parser.at += 2;
 
-            return .{ .projection = try attributes(parser, depth) };
+            return .{
+                .projection = try attributes(parser, depth),
+            };
         },
         else => return null,
     }
@@ -123,18 +143,32 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
         const start = try whole_constant(parser, range.start, "a slice runs between whole numbers");
         const end = try whole_constant(parser, range.end, "a slice runs between whole numbers");
 
-        return .{ .slice = .{ .start = start, .end = end, .exclusive = range.exclusive } };
+        return .{
+            .slice = .{
+                .start = start,
+                .end = end,
+                .exclusive = range.exclusive,
+            },
+        };
     }
 
     const constant = constant_value(parser, inner) catch |err| switch (err) {
-        error.NotConstant => return .{ .filter = inner },
+        error.NotConstant => return .{
+            .filter = inner,
+        },
         error.OutOfMemory => return error.OutOfMemory,
     };
 
     return switch (constant) {
-        .string => |name| .{ .attribute = name },
-        .number => .{ .element = try whole_constant(parser, inner, "an index is a whole number") },
-        else => .{ .filter = inner },
+        .string => |name| .{
+            .attribute = name,
+        },
+        .number => .{
+            .element = try whole_constant(parser, inner, "an index is a whole number"),
+        },
+        else => .{
+            .filter = inner,
+        },
     };
 }
 
@@ -168,14 +202,24 @@ pub fn primary(parser: *Parser, depth: u32) Error!Index {
         .caret => parent(
             parser,
         ),
-        .string => parser.add(.{ .literal = .{ .string = token.text } }),
-        .number => parser.add(.{ .literal = .{
-            .number = std.fmt.parseFloat(f64, token.text) catch return parser.fail("a number"),
-        } }),
-        .param => parser.add(.{ .param = token.text }),
+        .string => parser.add(.{
+            .literal = .{
+                .string = token.text,
+            },
+        }),
+        .number => parser.add(.{
+            .literal = .{
+                .number = std.fmt.parseFloat(f64, token.text) catch return parser.fail("a number"),
+            },
+        }),
+        .param => parser.add(.{
+            .param = token.text,
+        }),
         .left_paren => group(parser, depth),
         .left_bracket => array(parser, depth),
-        .left_brace => parser.add(.{ .object = try attributes(parser, depth) }),
+        .left_brace => parser.add(.{
+            .object = try attributes(parser, depth),
+        }),
         .identifier => word(parser, token, depth),
         else => parser.fail("a value: a literal, a field, `*`, `@`, `^`, `$param` or `(`"),
     };
@@ -191,7 +235,9 @@ pub fn parent(parser: *Parser) Error!Index {
         levels += 1;
     }
 
-    return parser.add(.{ .parent = levels });
+    return parser.add(.{
+        .parent = levels,
+    });
 }
 
 pub fn group(parser: *Parser, depth: u32) Error!Index {
@@ -199,7 +245,9 @@ pub fn group(parser: *Parser, depth: u32) Error!Index {
 
     _ = try parser.expect(.right_paren, "`)`");
 
-    return parser.add(.{ .group = inner });
+    return parser.add(.{
+        .group = inner,
+    });
 }
 
 pub fn array(parser: *Parser, depth: u32) Error!Index {
@@ -211,7 +259,10 @@ pub fn array(parser: *Parser, depth: u32) Error!Index {
         const spread = parser.accept(.dot_dot_dot);
         const element = try parser.expression(0, depth);
 
-        try elements.append(parser.arena, .{ .value = element, .spread = spread });
+        try elements.append(parser.arena, .{
+            .value = element,
+            .spread = spread,
+        });
 
         if (!parser.accept(.comma)) {
             _ = try parser.expect(.right_bracket, "`,` or `]` in the array");
@@ -219,7 +270,9 @@ pub fn array(parser: *Parser, depth: u32) Error!Index {
         }
     }
 
-    return parser.add(.{ .array = elements.items });
+    return parser.add(.{
+        .array = elements.items,
+    });
 }
 
 /// After `{`, up to and with `}`.
@@ -246,7 +299,9 @@ pub fn attribute(parser: *Parser, depth: u32) Error!tree.Attribute {
     if (parser.accept(.dot_dot_dot)) {
         const bare = parser.peek().kind == .comma or parser.peek().kind == .right_brace;
 
-        return .{ .spread = if (bare) null else try parser.expression(0, depth) };
+        return .{
+            .spread = if (bare) null else try parser.expression(0, depth),
+        };
     }
 
     if (parser.peek().kind == .string and parser.peek_at(1).kind == .colon) {
@@ -254,7 +309,12 @@ pub fn attribute(parser: *Parser, depth: u32) Error!tree.Attribute {
 
         _ = parser.take();
 
-        return .{ .keyed = .{ .key = key, .value = try parser.expression(0, depth) } };
+        return .{
+            .keyed = .{
+                .key = key,
+                .value = try parser.expression(0, depth),
+            },
+        };
     }
 
     const held = try parser.expression(0, depth);
@@ -262,14 +322,24 @@ pub fn attribute(parser: *Parser, depth: u32) Error!tree.Attribute {
     if (parser.nodes.items[held] == .pair) {
         const pair = parser.nodes.items[held].pair;
 
-        return .{ .conditional = .{ .condition = pair.first, .value = pair.second } };
+        return .{
+            .conditional = .{
+                .condition = pair.first,
+                .value = pair.second,
+            },
+        };
     }
 
     const key = name_of(parser, held) orelse {
         return parser.fail("this value needs a key: `\"name\": value`");
     };
 
-    return .{ .derived = .{ .key = key, .value = held } };
+    return .{
+        .derived = .{
+            .key = key,
+            .value = held,
+        },
+    };
 }
 
 /// `true`, `false`, `null`, a function call (`count(items)`, `string::split(text, ",")`), or an
@@ -280,20 +350,30 @@ pub fn word(parser: *Parser, token: Token, depth: u32) Error!Index {
     const text = token.text;
 
     if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) {
-        return parser.add(.{ .literal = .{ .boolean = text[0] == 't' } });
+        return parser.add(.{
+            .literal = .{
+                .boolean = text[0] == 't',
+            },
+        });
     }
 
     if (std.mem.eql(u8, text, "null")) {
-        return parser.add(.{ .literal = .null });
+        return parser.add(.{
+            .literal = .null,
+        });
     }
 
     const called = parser.peek().kind == .left_paren or parser.peek().kind == .colon_colon;
 
     if (called) {
-        return parser.add(.{ .call = try call_of(parser, token, depth) });
+        return parser.add(.{
+            .call = try call_of(parser, token, depth),
+        });
     }
 
-    return parser.add(.{ .this_attribute = text });
+    return parser.add(.{
+        .this_attribute = text,
+    });
 }
 
 pub fn call_of(parser: *Parser, token: Token, depth: u32) Error!tree.Call {
@@ -324,7 +404,11 @@ pub fn call_of(parser: *Parser, token: Token, depth: u32) Error!tree.Call {
         }
     }
 
-    return .{ .namespace = namespace, .name = name, .arguments = arguments.items };
+    return .{
+        .namespace = namespace,
+        .name = name,
+        .arguments = arguments.items,
+    };
 }
 
 /// DetermineName (section 4.6): the attribute a value reads, through the steps that keep

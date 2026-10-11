@@ -20,7 +20,12 @@ pub fn main(init: std.process.Init) u8 {
     return http.cli.serve(App, init, .{
         .setup = &setup,
         .flags = &.{
-            .{ .name = "--root", .value = .{ .text = &root } },
+            .{
+                .name = "--root",
+                .value = .{
+                    .text = &root,
+                },
+            },
         },
         .flags_help = "  --root <dir>               folder to serve files from (current directory)\n",
     });

@@ -24,9 +24,15 @@ pub const Operator = enum {
     or_,
 };
 
-pub const Element = struct { value: Index, spread: bool };
+pub const Element = struct {
+    value: Index,
+    spread: bool,
+};
 
-pub const Entry = struct { key: []const u8, value: Index };
+pub const Entry = struct {
+    key: []const u8,
+    value: Index,
+};
 
 pub const Attribute = union(enum) {
     /// `"key": value`
@@ -36,7 +42,10 @@ pub const Attribute = union(enum) {
     /// `...` (the this value) or `...value`.
     spread: ?Index,
     /// `condition => { ... }`: the object's attributes when the condition is true.
-    conditional: struct { condition: Index, value: Index },
+    conditional: struct {
+        condition: Index,
+        value: Index,
+    },
 };
 
 pub const Call = struct {
@@ -50,7 +59,11 @@ pub const Call = struct {
 pub const Step = union(enum) {
     attribute: []const u8,
     element: i64,
-    slice: struct { start: i64, end: i64, exclusive: bool },
+    slice: struct {
+        start: i64,
+        end: i64,
+        exclusive: bool,
+    },
     filter: Index,
     array_postfix,
     projection: []const Attribute,
@@ -81,15 +94,32 @@ pub const Node = union(enum) {
     parent: u32,
     param: []const u8,
     call: Call,
-    pipe: struct { base: Index, call: Call },
+    pipe: struct {
+        base: Index,
+        call: Call,
+    },
     group: Index,
-    traversal: struct { base: Index, steps: []const Step },
-    binary: struct { operator: Operator, left: Index, right: Index },
+    traversal: struct {
+        base: Index,
+        steps: []const Step,
+    },
+    binary: struct {
+        operator: Operator,
+        left: Index,
+        right: Index,
+    },
     not_: Index,
     negate: Index,
     positive: Index,
-    range: struct { start: Index, end: Index, exclusive: bool },
-    pair: struct { first: Index, second: Index },
+    range: struct {
+        start: Index,
+        end: Index,
+        exclusive: bool,
+    },
+    pair: struct {
+        first: Index,
+        second: Index,
+    },
     asc: Index,
     desc: Index,
 };

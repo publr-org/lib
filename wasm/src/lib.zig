@@ -123,10 +123,12 @@ pub const Runtime = struct {
         var args = std.mem.zeroes(abi.RuntimeInitArgs);
 
         args.mem_alloc_type = abi.alloc_with_pool;
-        args.mem_alloc_option = .{ .pool = .{
-            .heap_buf = options.heap.ptr,
-            .heap_size = @intCast(@min(options.heap.len, std.math.maxInt(u32))),
-        } };
+        args.mem_alloc_option = .{
+            .pool = .{
+                .heap_buf = options.heap.ptr,
+                .heap_size = @intCast(@min(options.heap.len, std.math.maxInt(u32))),
+            },
+        };
         args.native_module_name = options.module_name.ptr;
         args.native_symbols = &runtime.natives;
         args.n_native_symbols = @intCast(options.imports.len);
@@ -168,7 +170,9 @@ pub const Module = struct {
             return error.Load;
         };
 
-        return .{ .handle = handle };
+        return .{
+            .handle = handle,
+        };
     }
 
     pub fn unload(module: *Module) void {

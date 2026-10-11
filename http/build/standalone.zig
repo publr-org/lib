@@ -10,7 +10,10 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
             .target = library.resolved_target.?,
             .optimize = library.optimize.?,
             .imports = &.{
-                .{ .name = "publr_http", .module = library },
+                .{
+                    .name = "publr_http",
+                    .module = library,
+                },
             },
         }),
     });

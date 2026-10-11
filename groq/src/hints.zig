@@ -30,7 +30,10 @@ pub fn of(
     pending[0] = predicate;
 
     // A document's own scope: `^` inside the filter is the scope the filter runs in.
-    const element: Scope = .{ .this = .null, .parent = scope };
+    const element: Scope = .{
+        .this = .null,
+        .parent = scope,
+    };
 
     while (count > 0 and found.items.len < hints_max) {
         count -= 1;
@@ -96,7 +99,10 @@ fn hint_of(
 
         one[0] = held;
 
-        return .{ .attribute = attribute, .values = one };
+        return .{
+            .attribute = attribute,
+            .values = one,
+        };
     }
 
     if (held != .array) {
@@ -109,7 +115,10 @@ fn hint_of(
         }
     }
 
-    return .{ .attribute = attribute, .values = held.array };
+    return .{
+        .attribute = attribute,
+        .values = held.array,
+    };
 }
 
 fn scalar(value: Value) bool {

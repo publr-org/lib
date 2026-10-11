@@ -183,7 +183,9 @@ pub fn parse(bytes: []const u8) Error!Parsed {
     try parse_headers(&request, &lines);
     try validate_framing(&request);
 
-    return .{ .complete = request };
+    return .{
+        .complete = request,
+    };
 }
 
 fn parse_request_line(line: []const u8) Error!Request {
@@ -301,7 +303,10 @@ fn parse_headers(request: *Request, lines: *std.mem.SplitIterator(u8, .sequence)
             }
         }
 
-        request.headers[request.headers_len] = .{ .name = name, .value = value };
+        request.headers[request.headers_len] = .{
+            .name = name,
+            .value = value,
+        };
         request.headers_len += 1;
     }
 
@@ -336,7 +341,10 @@ fn validate_framing(request: *const Request) Error!void {
 fn parse_method(text: []const u8) ?Method {
     std.debug.assert(text.len <= request_line_bytes_max);
 
-    const table = [_]struct { []const u8, Method }{
+    const table = [_]struct {
+        []const u8,
+        Method,
+    }{
         .{ "GET", .get },         .{ "HEAD", .head },   .{ "POST", .post },
         .{ "PUT", .put },         .{ "PATCH", .patch }, .{ "DELETE", .delete },
         .{ "OPTIONS", .options },
@@ -460,7 +468,10 @@ test "connection close and HTTP/1.0 defaults" {
 }
 
 test "rejections map to statuses" {
-    const cases = [_]struct { []const u8, Error }{
+    const cases = [_]struct {
+        []const u8,
+        Error,
+    }{
         .{ "BREW / HTTP/1.1\r\nHost: h\r\n\r\n", error.NotImplemented },
         .{ "GET / HTTP/2.0\r\nHost: h\r\n\r\n", error.VersionNotSupported },
         .{ "GET / HTTP/1.1\r\n\r\n", error.BadRequest },
@@ -550,12 +561,14 @@ test "an empty query after ? parses as an empty slice" {
 }
 
 test "fuzz: the parser never crashes on arbitrary bytes" {
-    try std.testing.fuzz({}, fuzz_parse, .{ .corpus = &.{
-        "GET / HTTP/1.1\r\nHost: h\r\n\r\n",
-        "POST /x?y=1 HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\nabc",
-        "GET / HTTP/1.1\r\n",
-        "\r\n\r\n",
-    } });
+    try std.testing.fuzz({}, fuzz_parse, .{
+        .corpus = &.{
+            "GET / HTTP/1.1\r\nHost: h\r\n\r\n",
+            "POST /x?y=1 HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\nabc",
+            "GET / HTTP/1.1\r\n",
+            "\r\n\r\n",
+        },
+    });
 }
 
 fn fuzz_parse(_: void, smith: *std.testing.Smith) anyerror!void {

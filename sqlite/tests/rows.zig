@@ -17,7 +17,11 @@ test "read maps rows into structs in column order" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const Row = struct { id: i64, name: []const u8, views: i64 };
+    const Row = struct {
+        id: i64,
+        name: []const u8,
+        views: i64,
+    };
 
     var select = try db.prepare("SELECT id, name, views FROM t ORDER BY id");
     defer select.finalize();
@@ -100,7 +104,9 @@ test "read: Any carries the storage class of each cell" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const Row = struct { value: sqlite.Any };
+    const Row = struct {
+        value: sqlite.Any,
+    };
 
     var select = try db.prepare("SELECT value FROM t ORDER BY id");
     defer select.finalize();
@@ -131,7 +137,9 @@ test "read output owns its text beyond finalize" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const Row = struct { name: []const u8 };
+    const Row = struct {
+        name: []const u8,
+    };
 
     var select = try db.prepare("SELECT name FROM t");
     _ = try select.step();

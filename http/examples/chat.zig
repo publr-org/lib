@@ -39,7 +39,10 @@ const Chat = struct {
 pub fn main(init: std.process.Init) !u8 {
     var chat: Chat = .{};
 
-    return http.cli.serve(App, init, .{ .setup = &setup, .user_data = &chat });
+    return http.cli.serve(App, init, .{
+        .setup = &setup,
+        .user_data = &chat,
+    });
 }
 
 fn setup(app: *App) !void {

@@ -151,7 +151,9 @@ pub const State = struct {
 
 test "state hashes and verifies with its own scratch; dummy hash never matches" {
     var state: State = undefined;
-    try state.init(std.testing.allocator, std.testing.io, .{ .params = password.params_test });
+    try state.init(std.testing.allocator, std.testing.io, .{
+        .params = password.params_test,
+    });
     defer state.deinit();
 
     var out: [password.hash_len_max]u8 = undefined;

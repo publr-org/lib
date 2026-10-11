@@ -330,13 +330,29 @@ test "match: tokens, dots, wildcards, case" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const text: Value = .{ .string = "hello world FOO-bar ding.dong A.B.C.s! посчастливится!" };
+    const text: Value = .{
+        .string = "hello world FOO-bar ding.dong A.B.C.s! посчастливится!",
+    };
 
-    try std.testing.expect(try matches(arena, text, .{ .string = "foo" }));
-    try std.testing.expect(try matches(arena, text, .{ .string = "foo-bar" }));
-    try std.testing.expect(try matches(arena, text, .{ .string = "dingdong" }));
-    try std.testing.expect(try matches(arena, text, .{ .string = "wor*" }));
-    try std.testing.expect(try matches(arena, text, .{ .string = "ПОСЧАСТЛИВИТСЯ" }));
-    try std.testing.expect(!try matches(arena, text, .{ .string = "worl" }));
-    try std.testing.expect(!try matches(arena, text, .{ .string = "" }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "foo",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "foo-bar",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "dingdong",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "wor*",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "ПОСЧАСТЛИВИТСЯ",
+    }));
+    try std.testing.expect(!try matches(arena, text, .{
+        .string = "worl",
+    }));
+    try std.testing.expect(!try matches(arena, text, .{
+        .string = "",
+    }));
 }

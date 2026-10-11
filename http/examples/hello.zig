@@ -14,7 +14,9 @@ const http = @import("publr_http");
 const App = http.Server(.{});
 
 pub fn main(init: std.process.Init) u8 {
-    return http.cli.serve(App, init, .{ .setup = &setup });
+    return http.cli.serve(App, init, .{
+        .setup = &setup,
+    });
 }
 
 fn setup(app: *App) !void {

@@ -347,7 +347,11 @@ pub fn read_small_file(path: []const u8, buffer: []u8) ?u32 {
 /// Directories and unreadable paths report `.not_found` (opening a directory without
 /// backup semantics fails); a regular file larger than the buffer reports
 /// `.too_large` so callers can distinguish "absent" from "present but over the cap".
-pub const FileRead = union(enum) { len: u32, not_found, too_large };
+pub const FileRead = union(enum) {
+    len: u32,
+    not_found,
+    too_large,
+};
 
 pub fn read_file(fd: Fd, buffer: []u8) FileRead {
     std.debug.assert(fd != invalid);
@@ -382,7 +386,9 @@ pub fn read_file(fd: Fd, buffer: []u8) FileRead {
         total += got;
     }
 
-    return .{ .len = total };
+    return .{
+        .len = total,
+    };
 }
 
 /// Opens the file named by the `/`-separated `rel` path under `root`, refusing to

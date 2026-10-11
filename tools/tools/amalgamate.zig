@@ -47,7 +47,11 @@ pub fn main(init: std.process.Init) !void {
     const module_name = args[2];
     const out_dir_path = args[3];
 
-    var lib: Library = .{ .arena = arena, .io = io, .module_name = module_name };
+    var lib: Library = .{
+        .arena = arena,
+        .io = io,
+        .module_name = module_name,
+    };
     try lib.discover(root_path);
     try lib.markReachable();
     try lib.markLive();
@@ -116,11 +120,24 @@ const File = struct {
 };
 
 /// A declaration, or (with `node` null) a whole file used as a namespace.
-const Target = struct { file: u32, node: ?Node.Index };
+const Target = struct {
+    file: u32,
+    node: ?Node.Index,
+};
 
-const Mark = struct { file: u32, node: u32 };
-const Range = struct { start: u32, end: u32 };
-const Edit = struct { start: u32, end: u32, text: []const u8 };
+const Mark = struct {
+    file: u32,
+    node: u32,
+};
+const Range = struct {
+    start: u32,
+    end: u32,
+};
+const Edit = struct {
+    start: u32,
+    end: u32,
+    text: []const u8,
+};
 
 const Library = struct {
     arena: std.mem.Allocator,
@@ -199,7 +216,10 @@ const Library = struct {
             const node: Node.Index = @enumFromInt(i);
             if (ast.nodeTag(node) != .test_decl) continue;
             const start, const end = nodeRange(ast, node);
-            try tests.append(lib.arena, .{ .start = start, .end = end });
+            try tests.append(lib.arena, .{
+                .start = start,
+                .end = end,
+            });
         }
         file.tests = tests.items;
 
@@ -257,11 +277,17 @@ const Library = struct {
     }
 
     fn markDecl(lib: *Library, file: u32, node: Node.Index) !void {
-        try lib.marked.put(lib.arena, .{ .file = file, .node = @intFromEnum(node) }, {});
+        try lib.marked.put(lib.arena, .{
+            .file = file,
+            .node = @intFromEnum(node),
+        }, {});
     }
 
     fn isMarked(lib: *Library, file: u32, node: Node.Index) bool {
-        return lib.marked.contains(.{ .file = file, .node = @intFromEnum(node) });
+        return lib.marked.contains(.{
+            .file = file,
+            .node = @intFromEnum(node),
+        });
     }
 
     /// Marks a target and, for anything with members, its `pub` members.
@@ -322,8 +348,14 @@ const Library = struct {
         const file = &lib.files.items[file_index];
         const ast = &file.ast;
 
-        const var_decl = ast.fullVarDecl(node) orelse return .{ .file = file_index, .node = node };
-        const init_node = var_decl.ast.init_node.unwrap() orelse return .{ .file = file_index, .node = node };
+        const var_decl = ast.fullVarDecl(node) orelse return .{
+            .file = file_index,
+            .node = node,
+        };
+        const init_node = var_decl.ast.init_node.unwrap() orelse return .{
+            .file = file_index,
+            .node = node,
+        };
 
         // Peel `.a.b.c` off the initializer, innermost first. An alias to a
         // type-function call — `const Schema = OrderedMap(PropSchema)` — names
@@ -340,23 +372,35 @@ const Library = struct {
 
         if (lib.importPath(file, base)) |rel| {
             const target = lib.fileIndex(rel).?;
-            return lib.resolveMember(.{ .file = target, .node = null }, path.items);
+            return lib.resolveMember(.{
+                .file = target,
+                .node = null,
+            }, path.items);
         }
 
         if (ast.nodeTag(base) == .identifier) {
             const name = ast.tokenSlice(ast.nodeMainToken(base));
             if (file.import_aliases.get(name)) |target| {
-                return lib.resolveMember(.{ .file = target, .node = null }, path.items);
+                return lib.resolveMember(.{
+                    .file = target,
+                    .node = null,
+                }, path.items);
             }
             if (file.decls.get(name)) |decl| {
-                if (decl == node) return .{ .file = file_index, .node = node };
+                if (decl == node) return .{
+                    .file = file_index,
+                    .node = node,
+                };
                 const resolved = (try lib.resolveDecl(file_index, decl)) orelse return null;
                 return lib.resolveMember(resolved, path.items);
             }
             return null;
         }
 
-        return .{ .file = file_index, .node = node };
+        return .{
+            .file = file_index,
+            .node = node,
+        };
     }
 
     fn resolveMember(lib: *Library, target: Target, path: []const []const u8) std.mem.Allocator.Error!?Target {
@@ -406,7 +450,10 @@ const Library = struct {
     fn setLive(lib: *Library, work: *std.ArrayList(Mark), file: u32, node: Node.Index) !void {
         const entry = try lib.files.items[file].live.getOrPut(lib.arena, @intFromEnum(node));
         if (entry.found_existing) return;
-        try work.append(lib.arena, .{ .file = file, .node = @intFromEnum(node) });
+        try work.append(lib.arena, .{
+            .file = file,
+            .node = @intFromEnum(node),
+        });
     }
 
     /// The top-level declaration of `file` that contains `node`.
@@ -666,7 +713,10 @@ const Library = struct {
 
         if (docCommentText(ast, file.source)) |doc| {
             const start: u32 = @intCast(@intFromPtr(doc.ptr) - @intFromPtr(file.source.ptr));
-            try deleted.append(lib.arena, .{ .start = start, .end = start + @as(u32, @intCast(doc.len)) });
+            try deleted.append(lib.arena, .{
+                .start = start,
+                .end = start + @as(u32, @intCast(doc.len)),
+            });
         }
         for (file.tests) |range| try deleted.append(lib.arena, range);
 
@@ -686,7 +736,10 @@ const Library = struct {
 
             // Dead after test stripping.
             if (!lib.isLive(file_index, node) and !isComptimeBlock(ast, node)) {
-                try deleted.append(lib.arena, .{ .start = start, .end = end });
+                try deleted.append(lib.arena, .{
+                    .start = start,
+                    .end = end,
+                });
                 continue;
             }
 
@@ -699,7 +752,10 @@ const Library = struct {
                 if (lib.importPath(file, init_node)) |rel| {
                     const target = &lib.files.items[lib.fileIndex(rel).?];
                     if (!target.is_root and std.mem.eql(u8, name, target.stem)) {
-                        try deleted.append(lib.arena, .{ .start = start, .end = end });
+                        try deleted.append(lib.arena, .{
+                            .start = start,
+                            .end = end,
+                        });
                         continue;
                     }
                 }
@@ -716,7 +772,10 @@ const Library = struct {
                     if (mine != null and theirs != null and
                         std.mem.eql(u8, ast.getNodeSource(mine.?), root.ast.getNodeSource(theirs.?)))
                     {
-                        try deleted.append(lib.arena, .{ .start = start, .end = end });
+                        try deleted.append(lib.arena, .{
+                            .start = start,
+                            .end = end,
+                        });
                         continue;
                     }
                 }
@@ -725,7 +784,11 @@ const Library = struct {
             try qualified.put(lib.arena, name, {});
         }
 
-        for (deleted.items) |range| try edits.append(lib.arena, .{ .start = range.start, .end = range.end, .text = "" });
+        for (deleted.items) |range| try edits.append(lib.arena, .{
+            .start = range.start,
+            .end = range.end,
+            .text = "",
+        });
 
         for (0..ast.nodes.len) |i| {
             const node: Node.Index = @enumFromInt(i);
@@ -738,7 +801,11 @@ const Library = struct {
                 const target = &lib.files.items[lib.fileIndex(rel).?];
                 const start, const end = nodeRange(ast, node);
                 const text = if (target.is_root) lib.module_name else target.stem;
-                try edits.append(lib.arena, .{ .start = start, .end = end, .text = text });
+                try edits.append(lib.arena, .{
+                    .start = start,
+                    .end = end,
+                    .text = text,
+                });
                 continue;
             }
 
@@ -772,7 +839,11 @@ const Library = struct {
                 if (inRanges(start, deleted.items)) continue;
                 var end = start + 3;
                 if (end < file.source.len and file.source[end] == ' ') end += 1;
-                try edits.append(lib.arena, .{ .start = start, .end = end, .text = "" });
+                try edits.append(lib.arena, .{
+                    .start = start,
+                    .end = end,
+                    .text = "",
+                });
             }
         }
 
@@ -837,7 +908,10 @@ fn visibToken(ast: *const Ast, node: Node.Index) ?Ast.TokenIndex {
 
 /// Byte range of a node's source, including a leading doc comment for
 /// declarations — so deleting a declaration deletes its docs too.
-fn nodeRange(ast: *const Ast, node: Node.Index) struct { u32, u32 } {
+fn nodeRange(ast: *const Ast, node: Node.Index) struct {
+    u32,
+    u32,
+} {
     var first = ast.firstToken(node);
     while (first > 0 and ast.tokenTag(first - 1) == .doc_comment) first -= 1;
     const last = ast.lastToken(node);

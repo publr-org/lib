@@ -36,7 +36,12 @@ test "6.3 lookup is indexed, never a scan" {
     defer explain.finalize();
     var used_index = false;
     while (try explain.step()) {
-        const row = try explain.read(struct { id: i64, parent: i64, aux: i64, detail: []const u8 }, world.arena());
+        const row = try explain.read(struct {
+            id: i64,
+            parent: i64,
+            aux: i64,
+            detail: []const u8,
+        }, world.arena());
         if (std.mem.indexOf(u8, row.detail, "deps_edges_by_key") != null) used_index = true;
         try std.testing.expect(std.mem.indexOf(u8, row.detail, "SCAN deps_edges") == null);
     }
@@ -50,7 +55,12 @@ test "6.4 replace is indexed" {
     var explain = try world.db.prepare("EXPLAIN QUERY PLAN DELETE FROM deps_edges WHERE artifact = '/a'");
     defer explain.finalize();
     while (try explain.step()) {
-        const row = try explain.read(struct { id: i64, parent: i64, aux: i64, detail: []const u8 }, world.arena());
+        const row = try explain.read(struct {
+            id: i64,
+            parent: i64,
+            aux: i64,
+            detail: []const u8,
+        }, world.arena());
         try std.testing.expect(std.mem.indexOf(u8, row.detail, "SCAN deps_edges") == null);
     }
 }

@@ -191,33 +191,114 @@ fn is_svg(path: []const u8) bool {
 
 const fallback_type = "application/octet-stream";
 
-const types = [_]struct { extension: []const u8, mime: []const u8 }{
-    .{ .extension = "html", .mime = "text/html; charset=utf-8" },
-    .{ .extension = "htm", .mime = "text/html; charset=utf-8" },
-    .{ .extension = "css", .mime = "text/css; charset=utf-8" },
-    .{ .extension = "js", .mime = "text/javascript; charset=utf-8" },
-    .{ .extension = "mjs", .mime = "text/javascript; charset=utf-8" },
-    .{ .extension = "json", .mime = "application/json" },
-    .{ .extension = "map", .mime = "application/json" },
-    .{ .extension = "txt", .mime = "text/plain; charset=utf-8" },
-    .{ .extension = "xml", .mime = "application/xml" },
-    .{ .extension = "svg", .mime = "image/svg+xml" },
-    .{ .extension = "png", .mime = "image/png" },
-    .{ .extension = "jpg", .mime = "image/jpeg" },
-    .{ .extension = "jpeg", .mime = "image/jpeg" },
-    .{ .extension = "gif", .mime = "image/gif" },
-    .{ .extension = "webp", .mime = "image/webp" },
-    .{ .extension = "avif", .mime = "image/avif" },
-    .{ .extension = "ico", .mime = "image/x-icon" },
-    .{ .extension = "woff2", .mime = "font/woff2" },
-    .{ .extension = "woff", .mime = "font/woff" },
-    .{ .extension = "ttf", .mime = "font/ttf" },
-    .{ .extension = "otf", .mime = "font/otf" },
-    .{ .extension = "pdf", .mime = "application/pdf" },
-    .{ .extension = "wasm", .mime = "application/wasm" },
-    .{ .extension = "mp3", .mime = "audio/mpeg" },
-    .{ .extension = "mp4", .mime = "video/mp4" },
-    .{ .extension = "webm", .mime = "video/webm" },
+const types = [_]struct {
+    extension: []const u8,
+    mime: []const u8,
+}{
+    .{
+        .extension = "html",
+        .mime = "text/html; charset=utf-8",
+    },
+    .{
+        .extension = "htm",
+        .mime = "text/html; charset=utf-8",
+    },
+    .{
+        .extension = "css",
+        .mime = "text/css; charset=utf-8",
+    },
+    .{
+        .extension = "js",
+        .mime = "text/javascript; charset=utf-8",
+    },
+    .{
+        .extension = "mjs",
+        .mime = "text/javascript; charset=utf-8",
+    },
+    .{
+        .extension = "json",
+        .mime = "application/json",
+    },
+    .{
+        .extension = "map",
+        .mime = "application/json",
+    },
+    .{
+        .extension = "txt",
+        .mime = "text/plain; charset=utf-8",
+    },
+    .{
+        .extension = "xml",
+        .mime = "application/xml",
+    },
+    .{
+        .extension = "svg",
+        .mime = "image/svg+xml",
+    },
+    .{
+        .extension = "png",
+        .mime = "image/png",
+    },
+    .{
+        .extension = "jpg",
+        .mime = "image/jpeg",
+    },
+    .{
+        .extension = "jpeg",
+        .mime = "image/jpeg",
+    },
+    .{
+        .extension = "gif",
+        .mime = "image/gif",
+    },
+    .{
+        .extension = "webp",
+        .mime = "image/webp",
+    },
+    .{
+        .extension = "avif",
+        .mime = "image/avif",
+    },
+    .{
+        .extension = "ico",
+        .mime = "image/x-icon",
+    },
+    .{
+        .extension = "woff2",
+        .mime = "font/woff2",
+    },
+    .{
+        .extension = "woff",
+        .mime = "font/woff",
+    },
+    .{
+        .extension = "ttf",
+        .mime = "font/ttf",
+    },
+    .{
+        .extension = "otf",
+        .mime = "font/otf",
+    },
+    .{
+        .extension = "pdf",
+        .mime = "application/pdf",
+    },
+    .{
+        .extension = "wasm",
+        .mime = "application/wasm",
+    },
+    .{
+        .extension = "mp3",
+        .mime = "audio/mpeg",
+    },
+    .{
+        .extension = "mp4",
+        .mime = "video/mp4",
+    },
+    .{
+        .extension = "webm",
+        .mime = "video/webm",
+    },
 };
 
 test "resolve maps safe paths and refuses traversal, dotfiles, and separators" {

@@ -12,7 +12,9 @@ test "3.1 nothing pending, nothing planned" {
 
 test "3.2 one change, one plan" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -23,7 +25,9 @@ test "3.2 one change, one plan" {
 
 test "3.3 repeated key coalesces" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     for (0..10) |_| try world.index.invalidate(&.{"entry:1"}, 0);
@@ -35,7 +39,9 @@ test "3.3 repeated key coalesces" {
 
 test "3.4 different keys, same artifact, once" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{ "entry:1", "entry:2" });
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -46,7 +52,9 @@ test "3.4 different keys, same artifact, once" {
 
 test "3.5 quiet period gates the flush" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 2000 });
+    try world.open(.{
+        .quiet_ms = 2000,
+    });
     defer world.close();
     try world.index.invalidate(&.{"entry:1"}, 0);
     try std.testing.expect(!try world.index.due(1000));
@@ -58,7 +66,9 @@ test "3.5 quiet period gates the flush" {
 
 test "3.6 flush empties the queue" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -68,7 +78,9 @@ test "3.6 flush empties the queue" {
 
 test "3.7 keys arriving during a flush land in the next batch" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/b", &.{"entry:2"});
@@ -90,7 +102,10 @@ test "3.7 keys arriving during a flush land in the next batch" {
 
 test "3.8 cap seals a batch at once" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 60_000, .queue_cap = 3 });
+    try world.open(.{
+        .quiet_ms = 60_000,
+        .queue_cap = 3,
+    });
     defer world.close();
     try world.index.invalidate(&.{ "entry:1", "entry:2", "entry:3" }, 0);
     // Sealed the moment the 3rd landed: due regardless of quiet.
@@ -107,7 +122,10 @@ test "3.8 cap seals a batch at once" {
 
 test "3.9 cap counts distinct keys" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 60_000, .queue_cap = 3 });
+    try world.open(.{
+        .quiet_ms = 60_000,
+        .queue_cap = 3,
+    });
     defer world.close();
     for (0..5) |_| try world.index.invalidate(&.{"entry:1"}, 0);
     try std.testing.expect(!try world.index.due(1));
@@ -115,7 +133,10 @@ test "3.9 cap counts distinct keys" {
 
 test "3.9a sealed batches queue in order" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 60_000, .queue_cap = 2 });
+    try world.open(.{
+        .quiet_ms = 60_000,
+        .queue_cap = 2,
+    });
     defer world.close();
     try world.index.invalidate(&.{ "entry:1", "entry:2" }, 0);
     try world.index.invalidate(&.{ "entry:3", "entry:4" }, 1);
@@ -135,7 +156,9 @@ test "3.9a sealed batches queue in order" {
 
 test "3.10 a plan is last-state" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -146,7 +169,9 @@ test "3.10 a plan is last-state" {
 
 test "3.11 pending survives the process" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -154,7 +179,9 @@ test "3.11 pending survives the process" {
     // The same database bytes in a fresh process: serialize, reopen, deserialize.
     const image = try world.db.serialize(world.arena());
     var second: helper.World = undefined;
-    try second.open(.{ .quiet_ms = 1000 });
+    try second.open(.{
+        .quiet_ms = 1000,
+    });
     defer second.close();
     try second.db.deserialize(image);
 

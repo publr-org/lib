@@ -28,7 +28,10 @@ const Ingest = struct {
 pub fn main(init: std.process.Init) !u8 {
     var state: Ingest = .{};
 
-    return http.cli.serve(App, init, .{ .setup = &setup, .user_data = &state });
+    return http.cli.serve(App, init, .{
+        .setup = &setup,
+        .user_data = &state,
+    });
 }
 
 fn setup(app: *App) !void {
@@ -64,12 +67,18 @@ fn post_ingest(req: *http.Request, res: *http.Response, ctx: *App.Context) !void
 
     std.debug.assert(state.bytes_total >= req.body.len);
 
-    try res.json(.created, .{ .accepted = true, .events_total = state.events_total });
+    try res.json(.created, .{
+        .accepted = true,
+        .events_total = state.events_total,
+    });
 }
 
 fn get_event(req: *http.Request, res: *http.Response, ctx: *App.Context) !void {
     _ = ctx;
     const id = req.param("id").?;
 
-    try res.json(.ok, .{ .id = id, .query = req.query() });
+    try res.json(.ok, .{
+        .id = id,
+        .query = req.query(),
+    });
 }

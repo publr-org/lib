@@ -30,7 +30,11 @@ pub fn pipe(
     return score(context, base, called.arguments, scope, depth);
 }
 
-const Keyed = struct { item: Value, keys: []const Value, position: u32 };
+const Keyed = struct {
+    item: Value,
+    keys: []const Value,
+    position: u32,
+};
 
 /// Sorted by the arguments' values (`asc` by default, `desc` reversed), by TotalCompare;
 /// equal items keep their order.
@@ -49,7 +53,10 @@ fn order(
     }
 
     for (base, keyed, 0..) |item, *entry, position| {
-        const inner: Scope = .{ .this = item, .parent = scope };
+        const inner: Scope = .{
+            .this = item,
+            .parent = scope,
+        };
         const keys = try context.arena.alloc(Value, arguments.len);
 
         for (arguments, keys) |each, *key| {
@@ -62,7 +69,11 @@ fn order(
             key.* = try evaluate_module.evaluate(context, sorted_by, &inner, depth);
         }
 
-        entry.* = .{ .item = item, .keys = keys, .position = @intCast(position) };
+        entry.* = .{
+            .item = item,
+            .keys = keys,
+            .position = @intCast(position),
+        };
     }
 
     std.mem.sort(Keyed, keyed, descending, before);
@@ -73,7 +84,9 @@ fn order(
         item.* = entry.item;
     }
 
-    return .{ .array = sorted };
+    return .{
+        .array = sorted,
+    };
 }
 
 fn before(descending: []const bool, left: Keyed, right: Keyed) bool {
@@ -104,13 +117,20 @@ fn score(
     const scored = try context.arena.alloc(Keyed, base.len);
 
     for (base, scored, 0..) |item, *entry, position| {
-        entry.* = .{ .item = item, .keys = &.{}, .position = @intCast(position) };
+        entry.* = .{
+            .item = item,
+            .keys = &.{},
+            .position = @intCast(position),
+        };
 
         if (item != .object) {
             continue;
         }
 
-        const inner: Scope = .{ .this = item, .parent = scope };
+        const inner: Scope = .{
+            .this = item,
+            .parent = scope,
+        };
         const existing = item.object.get("_score");
         var sum: f64 = if (existing != null and existing.? == .number) existing.?.number else 0;
 
@@ -124,13 +144,19 @@ fn score(
             try builder.put(context.arena, key, held);
         }
 
-        try builder.put(context.arena, "_score", .{ .number = sum });
+        try builder.put(context.arena, "_score", .{
+            .number = sum,
+        });
 
         const keys = try context.arena.alloc(Value, 1);
 
-        keys[0] = .{ .number = sum };
+        keys[0] = .{
+            .number = sum,
+        };
         entry.* = .{
-            .item = .{ .object = builder.object() },
+            .item = .{
+                .object = builder.object(),
+            },
             .keys = keys,
             .position = @intCast(position),
         };
@@ -144,7 +170,9 @@ fn score(
         item.* = entry.item;
     }
 
-    return .{ .array = sorted };
+    return .{
+        .array = sorted,
+    };
 }
 
 fn higher_score(_: void, left: Keyed, right: Keyed) bool {

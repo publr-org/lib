@@ -50,7 +50,10 @@ pub fn main(init: std.process.Init) !void {
         .link_name_buffer = &link_name_buffer,
     });
 
-    const Entry = struct { name: []const u8, body: []const u8 };
+    const Entry = struct {
+        name: []const u8,
+        body: []const u8,
+    };
     var entries: std.ArrayList(Entry) = .empty;
     var root_seen = false;
 
@@ -64,9 +67,15 @@ pub fn main(init: std.process.Init) !void {
 
         if (std.mem.eql(u8, name, root_entry)) {
             root_seen = true;
-            try entries.insert(arena, 0, .{ .name = name, .body = body.written() });
+            try entries.insert(arena, 0, .{
+                .name = name,
+                .body = body.written(),
+            });
         } else {
-            try entries.append(arena, .{ .name = name, .body = body.written() });
+            try entries.append(arena, .{
+                .name = name,
+                .body = body.written(),
+            });
         }
     }
 
@@ -85,7 +94,9 @@ pub fn main(init: std.process.Init) !void {
     defer output_file.close(io);
     var output_buffer: [64 * 1024]u8 = undefined;
     var output_writer = output_file.writer(io, &output_buffer);
-    var tar_writer: std.tar.Writer = .{ .underlying_writer = &output_writer.interface };
+    var tar_writer: std.tar.Writer = .{
+        .underlying_writer = &output_writer.interface,
+    };
 
     for (entries.items) |entry| {
         try tar_writer.writeFileBytes(entry.name, entry.body, .{});

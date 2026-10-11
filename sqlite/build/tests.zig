@@ -8,17 +8,24 @@ pub fn build(b: *std.Build, library: *std.Build.Module, amalgamation: *std.Build
     const test_step = b.step("test", "Run all tests (unit + integration), on the source tree and on the amalgamation");
 
     for ([_]*std.Build.Module{ library, amalgamation }) |module| {
-        const unit_tests = b.addTest(.{ .root_module = module });
+        const unit_tests = b.addTest(.{
+            .root_module = module,
+        });
 
         const integration_module = b.createModule(.{
             .root_source_file = b.path("tests/root.zig"),
             .target = library.resolved_target.?,
             .optimize = library.optimize.?,
             .imports = &.{
-                .{ .name = "publr_sqlite", .module = module },
+                .{
+                    .name = "publr_sqlite",
+                    .module = module,
+                },
             },
         });
-        const integration_tests = b.addTest(.{ .root_module = integration_module });
+        const integration_tests = b.addTest(.{
+            .root_module = integration_module,
+        });
 
         test_step.dependOn(&b.addRunArtifact(unit_tests).step);
         test_step.dependOn(&b.addRunArtifact(integration_tests).step);

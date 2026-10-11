@@ -122,26 +122,75 @@ fn parse(
     var args_storage: [args_max][]const u8 = undefined;
     const args = collect_args(init, &args_storage) catch {
         std.debug.print("http-server: too many arguments (max {d})\n", .{args_max});
-        return .{ .exit = 2 };
+        return .{
+            .exit = 2,
+        };
     };
 
     std.debug.assert(args.len <= args_max);
 
     var options: engine_module.Options = load_config(init.gpa, args, defaults) catch {
-        return .{ .exit = 2 };
+        return .{
+            .exit = 2,
+        };
     };
     var config_path: []const u8 = "";
 
     const builtin_flags = [_]Flag{
-        .{ .name = "--config", .value = .{ .text = &config_path } },
-        .{ .name = "--address", .value = .{ .address = &options.address } },
-        .{ .name = "--port", .value = .{ .u16 = &options.port } },
-        .{ .name = "--connections", .value = .{ .u32 = &options.connections_max } },
-        .{ .name = "--request-bytes-max", .value = .{ .u32 = &options.request_bytes_max } },
-        .{ .name = "--response-bytes-max", .value = .{ .u32 = &options.response_bytes_max } },
-        .{ .name = "--idle-timeout-ms", .value = .{ .u32 = &options.idle_timeout_ms } },
-        .{ .name = "--request-timeout-ms", .value = .{ .u32 = &options.request_timeout_ms } },
-        .{ .name = "--shutdown-timeout-ms", .value = .{ .u32 = &options.shutdown_timeout_ms } },
+        .{
+            .name = "--config",
+            .value = .{
+                .text = &config_path,
+            },
+        },
+        .{
+            .name = "--address",
+            .value = .{
+                .address = &options.address,
+            },
+        },
+        .{
+            .name = "--port",
+            .value = .{
+                .u16 = &options.port,
+            },
+        },
+        .{
+            .name = "--connections",
+            .value = .{
+                .u32 = &options.connections_max,
+            },
+        },
+        .{
+            .name = "--request-bytes-max",
+            .value = .{
+                .u32 = &options.request_bytes_max,
+            },
+        },
+        .{
+            .name = "--response-bytes-max",
+            .value = .{
+                .u32 = &options.response_bytes_max,
+            },
+        },
+        .{
+            .name = "--idle-timeout-ms",
+            .value = .{
+                .u32 = &options.idle_timeout_ms,
+            },
+        },
+        .{
+            .name = "--request-timeout-ms",
+            .value = .{
+                .u32 = &options.request_timeout_ms,
+            },
+        },
+        .{
+            .name = "--shutdown-timeout-ms",
+            .value = .{
+                .u32 = &options.shutdown_timeout_ms,
+            },
+        },
     };
 
     var flags: [builtin_flags.len + flags_extra_max]Flag = undefined;
@@ -149,12 +198,18 @@ fn parse(
     @memcpy(flags[builtin_flags.len..][0..extra.len], extra);
 
     parse_flags(args, flags[0 .. builtin_flags.len + extra.len], extra_help) catch |err| {
-        return .{ .exit = if (err == error.Help) 0 else 2 };
+        return .{
+            .exit = if (err == error.Help) 0 else 2,
+        };
     };
 
-    validate_serve_options(&options) catch return .{ .exit = 2 };
+    validate_serve_options(&options) catch return .{
+        .exit = 2,
+    };
 
-    return .{ .options = options };
+    return .{
+        .options = options,
+    };
 }
 
 /// Prints an actionable message for an App.init failure and returns the exit code.
@@ -467,7 +522,10 @@ fn parse_address(text: []const u8) !([4]u8) {
 }
 
 fn validate_serve_options(options: *const engine_module.Options) error{Usage}!void {
-    const checks = [_]struct { ok: bool, message: []const u8 }{
+    const checks = [_]struct {
+        ok: bool,
+        message: []const u8,
+    }{
         .{
             .ok = options.connections_max > 0 and options.connections_max <= 65536,
             .message = "connections must be 1..65536",
@@ -537,9 +595,24 @@ test "parse_flags applies typed values and toggles in any order" {
     var connections: u32 = 4096;
     var verbose = false;
     var flags = [_]Flag{
-        .{ .name = "--port", .value = .{ .u16 = &port } },
-        .{ .name = "--connections", .value = .{ .u32 = &connections } },
-        .{ .name = "--verbose", .value = .{ .toggle = &verbose } },
+        .{
+            .name = "--port",
+            .value = .{
+                .u16 = &port,
+            },
+        },
+        .{
+            .name = "--connections",
+            .value = .{
+                .u32 = &connections,
+            },
+        },
+        .{
+            .name = "--verbose",
+            .value = .{
+                .toggle = &verbose,
+            },
+        },
     };
     const args = [_][]const u8{ "--verbose", "--port", "9000", "--connections", "64" };
 
@@ -560,7 +633,9 @@ test "a config file overlays the app's defaults; omitted fields keep them" {
         .{},
     );
 
-    const options = overlay(.{ .address = .{ 127, 0, 0, 1 } }, parsed);
+    const options = overlay(.{
+        .address = .{ 127, 0, 0, 1 },
+    }, parsed);
 
     try std.testing.expectEqual(@as(u16, 9090), options.port);
     try std.testing.expectEqual(@as(u32, 128), options.connections_max);
@@ -570,15 +645,23 @@ test "a config file overlays the app's defaults; omitted fields keep them" {
 }
 
 test "derived values follow the curated options" {
-    const small: engine_module.Options = .{ .connections_max = 10 };
+    const small: engine_module.Options = .{
+        .connections_max = 10,
+    };
     try std.testing.expectEqual(@as(u31, 128), engine_module.backlog(&small));
 
-    const big: engine_module.Options = .{ .connections_max = 65536 };
+    const big: engine_module.Options = .{
+        .connections_max = 65536,
+    };
     try std.testing.expectEqual(@as(u31, 4096), engine_module.backlog(&big));
 
-    const tiny_responses: engine_module.Options = .{ .response_bytes_max = 1 << 10 };
+    const tiny_responses: engine_module.Options = .{
+        .response_bytes_max = 1 << 10,
+    };
     try std.testing.expectEqual(@as(u32, 256 << 10), engine_module.arena_bytes(&tiny_responses));
 
-    const huge_responses: engine_module.Options = .{ .response_bytes_max = 8 << 20 };
+    const huge_responses: engine_module.Options = .{
+        .response_bytes_max = 8 << 20,
+    };
     try std.testing.expectEqual(@as(u32, 16 << 20), engine_module.arena_bytes(&huge_responses));
 }

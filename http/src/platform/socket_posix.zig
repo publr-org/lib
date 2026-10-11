@@ -246,7 +246,9 @@ pub fn read_small_file(path: []const u8, buffer: []u8) ?u32 {
     @memcpy(path_z[0..path.len], path);
     path_z[path.len] = 0;
 
-    const fd = std.c.open(&path_z, .{ .ACCMODE = .RDONLY });
+    const fd = std.c.open(&path_z, .{
+        .ACCMODE = .RDONLY,
+    });
 
     if (fd < 0) {
         return null;
@@ -277,7 +279,11 @@ pub fn read_small_file(path: []const u8, buffer: []u8) ?u32 {
 /// Directories and unreadable paths report `.not_found`; a regular file larger than
 /// the buffer reports `.too_large` so callers can distinguish "absent" from "present
 /// but over the response cap".
-pub const FileRead = union(enum) { len: u32, not_found, too_large };
+pub const FileRead = union(enum) {
+    len: u32,
+    not_found,
+    too_large,
+};
 
 pub fn read_file(fd: Fd, buffer: []u8) FileRead {
     std.debug.assert(fd >= 0);
@@ -317,7 +323,9 @@ pub fn read_file(fd: Fd, buffer: []u8) FileRead {
         total += @intCast(got);
     }
 
-    return .{ .len = total };
+    return .{
+        .len = total,
+    };
 }
 
 /// Opens the file named by the `/`-separated `rel` path under `root`, refusing to
@@ -336,7 +344,11 @@ pub fn open_under(root: []const u8, rel: []const u8) ?Fd {
     @memcpy(root_z[0..root.len], root);
     root_z[root.len] = 0;
 
-    const root_flags: std.c.O = .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .CLOEXEC = true };
+    const root_flags: std.c.O = .{
+        .ACCMODE = .RDONLY,
+        .DIRECTORY = true,
+        .CLOEXEC = true,
+    };
     const root_fd: Fd = std.c.open(&root_z, root_flags);
     if (root_fd < 0) return null;
     defer _ = std.c.close(root_fd);
@@ -353,9 +365,18 @@ pub fn open_under(root: []const u8, rel: []const u8) ?Fd {
 
         const is_last = segments.peek() == null;
         const flags: std.c.O = if (is_last)
-            .{ .ACCMODE = .RDONLY, .NOFOLLOW = true, .CLOEXEC = true }
+            .{
+                .ACCMODE = .RDONLY,
+                .NOFOLLOW = true,
+                .CLOEXEC = true,
+            }
         else
-            .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .NOFOLLOW = true, .CLOEXEC = true };
+            .{
+                .ACCMODE = .RDONLY,
+                .DIRECTORY = true,
+                .NOFOLLOW = true,
+                .CLOEXEC = true,
+            };
 
         const next: Fd = std.c.openat(current, &segment_z, flags);
         if (next < 0) {
@@ -387,7 +408,9 @@ fn set_nonblocking(fd: Fd) error{Unexpected}!void {
         return error.Unexpected;
     }
 
-    const nonblock: c_int = @bitCast(@as(u32, @bitCast(libc.O{ .NONBLOCK = true })));
+    const nonblock: c_int = @bitCast(@as(u32, @bitCast(libc.O{
+        .NONBLOCK = true,
+    })));
     std.debug.assert(nonblock != 0);
 
     if (libc.fcntl(fd, libc.F.SETFL, flags | nonblock) < 0) {
@@ -492,7 +515,10 @@ test "open_under reads a regular file and refuses symlinks, escapes, and directo
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "real.txt", .data = "hello" });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "real.txt",
+        .data = "hello",
+    });
     try tmp.dir.symLink(io, "real.txt", "link.txt", .{});
     // An intermediate-directory symlink pointing outside the root: a request that
     // walks through it must not resolve (open_under refuses it before the file).

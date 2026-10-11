@@ -75,7 +75,10 @@ pub const Client = struct {
         std.debug.assert(client.request.len > 0);
 
         const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", client.port);
-        const stream = try address.connect(std.testing.io, .{ .mode = .stream, .protocol = .tcp });
+        const stream = try address.connect(std.testing.io, .{
+            .mode = .stream,
+            .protocol = .tcp,
+        });
         defer stream.close(std.testing.io);
 
         var write_buffer: [1024]u8 = undefined;

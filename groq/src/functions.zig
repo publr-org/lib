@@ -24,37 +24,177 @@ pub const Signature = struct {
 };
 
 pub const signatures = [_]Signature{
-    .{ .namespace = "global", .name = "coalesce", .arguments_min = 0, .arguments_max = 1024 },
-    .{ .namespace = "global", .name = "count", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "dateTime", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "defined", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "length", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "now", .arguments_min = 0, .arguments_max = 0 },
-    .{ .namespace = "global", .name = "references", .arguments_min = 1, .arguments_max = 1024 },
-    .{ .namespace = "global", .name = "round", .arguments_min = 1, .arguments_max = 2 },
-    .{ .namespace = "global", .name = "select", .arguments_min = 0, .arguments_max = 1024 },
-    .{ .namespace = "global", .name = "string", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "boost", .arguments_min = 2, .arguments_max = 2 },
-    .{ .namespace = "global", .name = "lower", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "global", .name = "upper", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "dateTime", .name = "now", .arguments_min = 0, .arguments_max = 0 },
-    .{ .namespace = "array", .name = "join", .arguments_min = 2, .arguments_max = 2 },
-    .{ .namespace = "array", .name = "compact", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "array", .name = "unique", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "array", .name = "intersects", .arguments_min = 2, .arguments_max = 2 },
-    .{ .namespace = "string", .name = "split", .arguments_min = 2, .arguments_max = 2 },
-    .{ .namespace = "string", .name = "startsWith", .arguments_min = 2, .arguments_max = 2 },
-    .{ .namespace = "string", .name = "lower", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "string", .name = "upper", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "math", .name = "sum", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "math", .name = "avg", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "math", .name = "min", .arguments_min = 1, .arguments_max = 1 },
-    .{ .namespace = "math", .name = "max", .arguments_min = 1, .arguments_max = 1 },
+    .{
+        .namespace = "global",
+        .name = "coalesce",
+        .arguments_min = 0,
+        .arguments_max = 1024,
+    },
+    .{
+        .namespace = "global",
+        .name = "count",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "dateTime",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "defined",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "length",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "now",
+        .arguments_min = 0,
+        .arguments_max = 0,
+    },
+    .{
+        .namespace = "global",
+        .name = "references",
+        .arguments_min = 1,
+        .arguments_max = 1024,
+    },
+    .{
+        .namespace = "global",
+        .name = "round",
+        .arguments_min = 1,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "global",
+        .name = "select",
+        .arguments_min = 0,
+        .arguments_max = 1024,
+    },
+    .{
+        .namespace = "global",
+        .name = "string",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "boost",
+        .arguments_min = 2,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "global",
+        .name = "lower",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "global",
+        .name = "upper",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "dateTime",
+        .name = "now",
+        .arguments_min = 0,
+        .arguments_max = 0,
+    },
+    .{
+        .namespace = "array",
+        .name = "join",
+        .arguments_min = 2,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "array",
+        .name = "compact",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "array",
+        .name = "unique",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "array",
+        .name = "intersects",
+        .arguments_min = 2,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "string",
+        .name = "split",
+        .arguments_min = 2,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "string",
+        .name = "startsWith",
+        .arguments_min = 2,
+        .arguments_max = 2,
+    },
+    .{
+        .namespace = "string",
+        .name = "lower",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "string",
+        .name = "upper",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "math",
+        .name = "sum",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "math",
+        .name = "avg",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "math",
+        .name = "min",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
+    .{
+        .namespace = "math",
+        .name = "max",
+        .arguments_min = 1,
+        .arguments_max = 1,
+    },
 };
 
 pub const pipe_signatures = [_]Signature{
-    .{ .namespace = "global", .name = "order", .arguments_min = 1, .arguments_max = 1024 },
-    .{ .namespace = "global", .name = "score", .arguments_min = 1, .arguments_max = 1024 },
+    .{
+        .namespace = "global",
+        .name = "order",
+        .arguments_min = 1,
+        .arguments_max = 1024,
+    },
+    .{
+        .namespace = "global",
+        .name = "score",
+        .arguments_min = 1,
+        .arguments_max = 1024,
+    },
 };
 
 pub const namespaces = [_][]const u8{ "global", "dateTime", "array", "string", "math" };
@@ -98,7 +238,9 @@ pub fn call(context: *Context, called: tree.Call, scope: *const Scope, depth: u3
     }
 
     if (is(called, "dateTime", "now")) {
-        return .{ .datetime = context.now };
+        return .{
+            .datetime = context.now,
+        };
     }
 
     if (std.mem.eql(u8, called.namespace, "array")) {
@@ -144,7 +286,9 @@ fn global(context: *Context, called: tree.Call, scope: *const Scope, depth: u32)
     if (std.mem.eql(u8, name, "now")) {
         var buffer: [40]u8 = undefined;
 
-        return .{ .string = try context.arena.dupe(u8, datetime.format(&buffer, context.now)) };
+        return .{
+            .string = try context.arena.dupe(u8, datetime.format(&buffer, context.now)),
+        };
     }
 
     if (std.mem.eql(u8, name, "round")) {
@@ -172,7 +316,9 @@ pub fn single(arena: std.mem.Allocator, name: []const u8, first: Value) Error!Va
     }
 
     if (std.mem.eql(u8, name, "defined")) {
-        return .{ .boolean = first != .null };
+        return .{
+            .boolean = first != .null,
+        };
     }
 
     if (std.mem.eql(u8, name, "length")) {
@@ -185,7 +331,9 @@ pub fn single(arena: std.mem.Allocator, name: []const u8, first: Value) Error!Va
 
     if (std.mem.eql(u8, name, "dateTime")) {
         return switch (first) {
-            .string => |text| if (datetime.parse(text)) |time| .{ .datetime = time } else .null,
+            .string => |text| if (datetime.parse(text)) |time| .{
+                .datetime = time,
+            } else .null,
             .datetime => first,
             else => .null,
         };
@@ -208,7 +356,9 @@ pub fn single(arena: std.mem.Allocator, name: []const u8, first: Value) Error!Va
             _ = std.ascii.upperString(changed, first.string);
         }
 
-        return .{ .string = changed };
+        return .{
+            .string = changed,
+        };
     }
 
     return .null;
@@ -222,19 +372,25 @@ pub fn string_of(arena: std.mem.Allocator, value: Value) Error!Value {
     std.debug.assert(value != .number or std.math.isFinite(value.number));
 
     return switch (value) {
-        .boolean => |truth| .{ .string = if (truth) "true" else "false" },
+        .boolean => |truth| .{
+            .string = if (truth) "true" else "false",
+        },
         .string => value,
         .number => |number| {
             var out: std.Io.Writer.Allocating = .init(arena);
 
             value_module.write_number(&out.writer, number) catch return error.OutOfMemory;
 
-            return .{ .string = out.written() };
+            return .{
+                .string = out.written(),
+            };
         },
         .datetime => |time| {
             var buffer: [40]u8 = undefined;
 
-            return .{ .string = try arena.dupe(u8, datetime.format(&buffer, time)) };
+            return .{
+                .string = try arena.dupe(u8, datetime.format(&buffer, time)),
+            };
         },
         else => .null,
     };
@@ -314,7 +470,9 @@ fn references(context: *Context, called: tree.Call, scope: *const Scope, depth: 
         return Value.false_value;
     }
 
-    return .{ .boolean = try has_reference(context, scope.this, ids.items) };
+    return .{
+        .boolean = try has_reference(context, scope.this, ids.items),
+    };
 }
 
 /// Whether a value holds a `{_ref}` (or, in Publr, a reference id) to one of `ids`, at any

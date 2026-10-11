@@ -102,7 +102,11 @@ pub fn amalgamate(b: *std.Build, library: *std.Build.Module, options: Amalgamate
         .install_subdir = options.install_subdir,
     }).step);
 
-    return .{ .name = name, .file = file, .module = module };
+    return .{
+        .name = name,
+        .file = file,
+        .module = module,
+    };
 }
 
 pub const Options = struct {
@@ -144,7 +148,10 @@ fn docsSite(b: *std.Build, amalgamation: Amalgamation) std.Build.LazyPath {
 
     // The compiler emits docs for an object, not for a module. The tar directory
     // takes the object's name, which is what the viewer shows as the module.
-    const docs_object = b.addObject(.{ .name = name, .root_module = amalgamation.module });
+    const docs_object = b.addObject(.{
+        .name = name,
+        .root_module = amalgamation.module,
+    });
     const emitted = docs_object.getEmittedDocs();
 
     const tools = b.addWriteFiles();

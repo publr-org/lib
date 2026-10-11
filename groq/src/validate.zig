@@ -16,7 +16,10 @@ pub const Error = error{Invalid};
 /// `boost()` (in `score()`), a range (right of `in`), a pair (an argument of `select()`).
 const Place = enum { anywhere, order_argument, score_argument, in_right, select_argument };
 
-const Pending = struct { index: Index, place: Place };
+const Pending = struct {
+    index: Index,
+    place: Place,
+};
 
 pub fn validate(
     arena: std.mem.Allocator,
@@ -26,11 +29,16 @@ pub fn validate(
 ) (Error || error{OutOfMemory})!void {
     var pending: std.ArrayList(Pending) = .empty;
 
-    try pending.append(arena, .{ .index = query.root, .place = .anywhere });
+    try pending.append(arena, .{
+        .index = query.root,
+        .place = .anywhere,
+    });
 
     while (pending.pop()) |item| {
         if (try check(arena, query, params, item, &pending)) |message| {
-            problem.* = .{ .message = message };
+            problem.* = .{
+                .message = message,
+            };
             return error.Invalid;
         }
     }
@@ -45,7 +53,10 @@ fn check(
     pending: *std.ArrayList(Pending),
 ) error{OutOfMemory}!?[]const u8 {
     const node = query.node(item.index);
-    const push = Pusher{ .arena = arena, .pending = pending };
+    const push = Pusher{
+        .arena = arena,
+        .pending = pending,
+    };
 
     switch (node) {
         .param => |name| if (params.get(name) == null) {
@@ -147,7 +158,10 @@ const Pusher = struct {
     pending: *std.ArrayList(Pending),
 
     fn add(pusher: Pusher, index: Index, place: Place) error{OutOfMemory}!void {
-        try pusher.pending.append(pusher.arena, .{ .index = index, .place = place });
+        try pusher.pending.append(pusher.arena, .{
+            .index = index,
+            .place = place,
+        });
     }
 
     fn attributes(pusher: Pusher, list: []const tree.Attribute) error{OutOfMemory}!void {

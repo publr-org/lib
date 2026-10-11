@@ -102,7 +102,10 @@ pub const Instance = struct {
             return error.OutOfMemory;
         };
 
-        return .{ .handle = handle, .env = env };
+        return .{
+            .handle = handle,
+            .env = env,
+        };
     }
 
     pub fn deinit(instance: *Instance) void {

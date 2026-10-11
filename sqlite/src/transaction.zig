@@ -83,7 +83,10 @@ pub const Transaction = struct {
 
         db.transaction_depth += 1;
 
-        return .{ .db = db, .depth = db.transaction_depth };
+        return .{
+            .db = db,
+            .depth = db.transaction_depth,
+        };
     }
 
     /// Makes this transaction's writes permanent: `COMMIT` at the outermost

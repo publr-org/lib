@@ -16,7 +16,10 @@ const skipped_files = [_][]const u8{
     "function/diff.yml", "function/identity.yml", "type/path.yml", "legacy/func_path.yml",
 };
 
-const Counts = struct { passed: u32 = 0, failed: u32 = 0 };
+const Counts = struct {
+    passed: u32 = 0,
+    failed: u32 = 0,
+};
 
 pub fn main(init: std.process.Init) !u8 {
     std.debug.assert(skipped_features.len > 0);
@@ -243,7 +246,10 @@ fn skip(
     return !datasets.contains(reference);
 }
 
-const Outcome = struct { passed: bool, detail: []const u8 = "" };
+const Outcome = struct {
+    passed: bool,
+    detail: []const u8 = "",
+};
 
 fn check(
     arena: std.mem.Allocator,
@@ -253,8 +259,12 @@ fn check(
     const query = object.get("query").?.string;
     const valid = if (object.get("valid")) |given| given.bool else true;
     const reference = object.get("dataset").?.object.get("_ref").?.string;
-    var memory: groq.Memory = .{ .documents = datasets.get(reference).? };
-    var params: Value = .{ .object = .{} };
+    var memory: groq.Memory = .{
+        .documents = datasets.get(reference).?,
+    };
+    var params: Value = .{
+        .object = .{},
+    };
 
     if (object.get("params")) |given| {
         if (given == .object) {
@@ -265,7 +275,9 @@ fn check(
     var problem: groq.Problem = .{};
     const result = groq.execute(arena, query, memory.dataset(), .{
         .params = params.object,
-        .now = .{ .seconds = 1_700_000_000 },
+        .now = .{
+            .seconds = 1_700_000_000,
+        },
     }, &problem);
 
     if (!valid) {
@@ -273,9 +285,14 @@ fn check(
             const shown = try groq.values.to_json(arena, got.value);
             const detail = try std.fmt.allocPrint(arena, "expected invalid, got {s}", .{shown});
 
-            return .{ .passed = false, .detail = detail };
+            return .{
+                .passed = false,
+                .detail = detail,
+            };
         } else |err| {
-            return .{ .passed = err == error.Invalid };
+            return .{
+                .passed = err == error.Invalid,
+            };
         }
     }
 
@@ -286,7 +303,10 @@ fn check(
             problem.at,
         });
 
-        return .{ .passed = false, .detail = detail };
+        return .{
+            .passed = false,
+            .detail = detail,
+        };
     };
     // Through JSON, as a client sees it: a datetime, pair or range becomes its text.
     const written = try groq.values.to_json(arena, answered.value);
@@ -296,7 +316,9 @@ fn check(
     const normalized = try normalize_scores(arena, got, expected);
 
     if (same(normalized, expected)) {
-        return .{ .passed = true };
+        return .{
+            .passed = true,
+        };
     }
 
     const detail = try std.fmt.allocPrint(arena, "expected {s}\n  got      {s}", .{
@@ -304,7 +326,10 @@ fn check(
         try groq.values.to_json(arena, normalized),
     });
 
-    return .{ .passed = false, .detail = detail };
+    return .{
+        .passed = false,
+        .detail = detail,
+    };
 }
 
 /// The suite writes scores as `_pos`, each element's rank by score, 1 the highest, equal
@@ -349,16 +374,22 @@ fn normalize_scores(arena: std.mem.Allocator, got: Value, expected: Value) !Valu
 
         for (item.object.keys, item.object.values) |key, held| {
             if (std.mem.eql(u8, key, "_score") and held == .number) {
-                try builder.put(arena, "_pos", .{ .number = rank(scores.items, held.number) });
+                try builder.put(arena, "_pos", .{
+                    .number = rank(scores.items, held.number),
+                });
             } else {
                 try builder.put(arena, key, held);
             }
         }
 
-        out.* = .{ .object = builder.object() };
+        out.* = .{
+            .object = builder.object(),
+        };
     }
 
-    return .{ .array = items };
+    return .{
+        .array = items,
+    };
 }
 
 fn rank(sorted: []const f64, score: f64) f64 {

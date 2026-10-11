@@ -9,7 +9,9 @@ test "fixed heap: configured at init, exhaustion is an error, not a crash" {
     const heap = try std.testing.allocator.alignedAlloc(u8, .@"8", heap_bytes);
     defer std.testing.allocator.free(heap);
 
-    var runtime = try sqlite.Runtime.init(.{ .heap = heap });
+    var runtime = try sqlite.Runtime.init(.{
+        .heap = heap,
+    });
     defer runtime.deinit();
 
     var db = try sqlite.Database.open(&runtime, ":memory:", .{});
@@ -51,10 +53,14 @@ test "a second connection on the file waits busy_timeout_ms, then error.Busy" {
     var path_buffer: [128]u8 = undefined;
     const path = try temporary_path(&path_buffer, &temporary, "shared.db");
 
-    var writer = try sqlite.Database.open(&runtime, path, .{ .busy_timeout_ms = 10 });
+    var writer = try sqlite.Database.open(&runtime, path, .{
+        .busy_timeout_ms = 10,
+    });
     defer writer.close();
 
-    var waiter = try sqlite.Database.open(&runtime, path, .{ .busy_timeout_ms = 10 });
+    var waiter = try sqlite.Database.open(&runtime, path, .{
+        .busy_timeout_ms = 10,
+    });
     defer waiter.close();
 
     try writer.exec("CREATE TABLE t (n INTEGER)");
@@ -80,14 +86,18 @@ test "read_only: writes fail with error.ReadOnly, a missing file is an error" {
 
     try std.testing.expectError(
         error.Sqlite,
-        sqlite.Database.open(&runtime, path, .{ .read_only = true }),
+        sqlite.Database.open(&runtime, path, .{
+            .read_only = true,
+        }),
     );
 
     var rw = try sqlite.Database.open(&runtime, path, .{});
     try rw.exec("CREATE TABLE t (n INTEGER)");
     rw.close();
 
-    var ro = try sqlite.Database.open(&runtime, path, .{ .read_only = true });
+    var ro = try sqlite.Database.open(&runtime, path, .{
+        .read_only = true,
+    });
     defer ro.close();
 
     try std.testing.expectError(error.ReadOnly, ro.exec("INSERT INTO t (n) VALUES (1)"));
@@ -157,7 +167,9 @@ test "limit_work stops a statement past its budget, the same way every run" {
 
     try std.testing.expect(try again.step());
 
-    const Counted = struct { count: i64 };
+    const Counted = struct {
+        count: i64,
+    };
     const counted = try again.read(Counted, std.testing.allocator);
 
     try std.testing.expectEqual(@as(i64, 1_000_000), counted.count);

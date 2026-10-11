@@ -15,7 +15,10 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
             .root_source_file = b.path("conformance/run.zig"),
             .target = library.resolved_target,
             .optimize = .ReleaseSafe,
-            .imports = &.{.{ .name = "groq", .module = engine }},
+            .imports = &.{.{
+                .name = "groq",
+                .module = engine,
+            }},
         }),
     });
     const run = b.addRunArtifact(runner);

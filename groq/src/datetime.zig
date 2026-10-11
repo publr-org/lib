@@ -68,7 +68,10 @@ pub fn parse(text: []const u8) ?Datetime {
     const days = days_from_civil(year, month, day);
     const clock: i64 = @as(i64, hour) * 3600 + @as(i64, minute) * 60 + @min(second, 59);
 
-    return .{ .seconds = days * 86400 + clock - offset, .nanoseconds = nanoseconds };
+    return .{
+        .seconds = days * 86400 + clock - offset,
+        .nanoseconds = nanoseconds,
+    };
 }
 
 /// `Z` (or `z`) is 0; `+02:00` is 7200 seconds ahead of UTC.
@@ -138,7 +141,11 @@ fn days_from_civil(year_in: u32, month: u32, day: u32) i64 {
     return era * 146097 + day_of_era - 719468;
 }
 
-const Civil = struct { year: i64, month: u32, day: u32 };
+const Civil = struct {
+    year: i64,
+    month: u32,
+    day: u32,
+};
 
 fn civil_from_days(days_since: i64) Civil {
     std.debug.assert(@abs(days_since) < 4_000_000);
@@ -155,7 +162,11 @@ fn civil_from_days(days_since: i64) Civil {
     const month: u32 = @intCast(if (shifted < 10) shifted + 3 else shifted - 9);
     const year = year_of_era + era * 400 + @as(i64, @intFromBool(month <= 2));
 
-    return .{ .year = year, .month = month, .day = day };
+    return .{
+        .year = year,
+        .month = month,
+        .day = day,
+    };
 }
 
 /// RFC 3339 in UTC: no fraction when there is none, three digits when it is whole
@@ -221,7 +232,10 @@ pub fn add_seconds(time: Datetime, seconds: f64) ?Datetime {
         moved += 1;
     }
 
-    return .{ .seconds = moved, .nanoseconds = @intCast(nanoseconds) };
+    return .{
+        .seconds = moved,
+        .nanoseconds = @intCast(nanoseconds),
+    };
 }
 
 /// `left - right` in seconds.

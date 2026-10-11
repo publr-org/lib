@@ -20,10 +20,18 @@ pub const hash_len_max: u32 = 128;
 pub const Params = argon2.Params;
 
 /// The production cost: 19 MiB, two passes — the OWASP minimum for argon2id.
-pub const params_default: Params = .{ .t = 2, .m = 19456, .p = 1 };
+pub const params_default: Params = .{
+    .t = 2,
+    .m = 19456,
+    .p = 1,
+};
 /// A cost for tests: 8 KiB, one pass, so a suite that signs in a hundred times
 /// still runs in milliseconds. Never for real passwords.
-pub const params_test: Params = .{ .t = 1, .m = 8, .p = 1 };
+pub const params_test: Params = .{
+    .t = 1,
+    .m = 8,
+    .p = 1,
+};
 /// Largest memory parameter `hash`, `verify`, and `scratch_bytes` accept — 1 GiB,
 /// far above the default, and below the point `scratch_bytes` overflows `u32`.
 pub const m_max: u32 = 1 << 20;
@@ -68,7 +76,10 @@ pub fn hash(
         return error.WeakPassword;
     }
 
-    const options: argon2.HashOptions = .{ .allocator = scratch, .params = params };
+    const options: argon2.HashOptions = .{
+        .allocator = scratch,
+        .params = params,
+    };
     const encoded = argon2.strHash(plain, options, out, io) catch return error.HashFailed;
 
     std.debug.assert(encoded.len <= hash_len_max);
@@ -100,7 +111,9 @@ pub fn verify(
         return error.WrongPassword;
     }
 
-    argon2.strVerify(encoded, plain, .{ .allocator = scratch }, io) catch {
+    argon2.strVerify(encoded, plain, .{
+        .allocator = scratch,
+    }, io) catch {
         return error.WrongPassword;
     };
 }

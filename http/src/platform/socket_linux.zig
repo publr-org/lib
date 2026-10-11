@@ -237,7 +237,11 @@ pub fn read_small_file(path: []const u8, buffer: []u8) ?u32 {
 /// Directories and unreadable paths report `.not_found`; a regular file larger than
 /// the buffer reports `.too_large` so callers can distinguish "absent" from "present
 /// but over the response cap".
-pub const FileRead = union(enum) { len: u32, not_found, too_large };
+pub const FileRead = union(enum) {
+    len: u32,
+    not_found,
+    too_large,
+};
 
 pub fn read_file(fd: Fd, buffer: []u8) FileRead {
     std.debug.assert(fd >= 0);
@@ -282,7 +286,9 @@ pub fn read_file(fd: Fd, buffer: []u8) FileRead {
         total += @intCast(rc);
     }
 
-    return .{ .len = total };
+    return .{
+        .len = total,
+    };
 }
 
 /// Opens the file named by the `/`-separated `rel` path under `root`, refusing to
@@ -301,7 +307,11 @@ pub fn open_under(root: []const u8, rel: []const u8) ?Fd {
     @memcpy(root_z[0..root.len], root);
     root_z[root.len] = 0;
 
-    const root_flags: linux.O = .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .CLOEXEC = true };
+    const root_flags: linux.O = .{
+        .ACCMODE = .RDONLY,
+        .DIRECTORY = true,
+        .CLOEXEC = true,
+    };
     const root_rc = linux.open(&root_z, root_flags, 0);
     if (linux.errno(root_rc) != .SUCCESS) return null;
     const root_fd: Fd = @intCast(root_rc);
@@ -319,9 +329,18 @@ pub fn open_under(root: []const u8, rel: []const u8) ?Fd {
 
         const is_last = segments.peek() == null;
         const flags: linux.O = if (is_last)
-            .{ .ACCMODE = .RDONLY, .NOFOLLOW = true, .CLOEXEC = true }
+            .{
+                .ACCMODE = .RDONLY,
+                .NOFOLLOW = true,
+                .CLOEXEC = true,
+            }
         else
-            .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .NOFOLLOW = true, .CLOEXEC = true };
+            .{
+                .ACCMODE = .RDONLY,
+                .DIRECTORY = true,
+                .NOFOLLOW = true,
+                .CLOEXEC = true,
+            };
 
         const rc = linux.openat(current, &segment_z, flags, 0);
         if (linux.errno(rc) != .SUCCESS) {
@@ -384,7 +403,11 @@ fn open_read(path: []const u8) ?Fd {
 
     // Used only for operator-supplied single paths (config file, /proc). NOFOLLOW
     // refuses a final-component symlink; a full no-symlink walk is `open_under`'s job.
-    const rc = linux.open(&path_z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true, .NOFOLLOW = true }, 0);
+    const rc = linux.open(&path_z, .{
+        .ACCMODE = .RDONLY,
+        .CLOEXEC = true,
+        .NOFOLLOW = true,
+    }, 0);
 
     if (linux.errno(rc) != .SUCCESS) {
         return null;

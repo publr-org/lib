@@ -11,7 +11,10 @@ fn record_many(world: *helper.World, comptime prefix: []const u8, count: usize, 
 
 test "4.1 under the limit" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000, .fanout_max = 100 });
+    try world.open(.{
+        .quiet_ms = 1000,
+        .fanout_max = 100,
+    });
     defer world.close();
     try record_many(&world, "/a", 99, "entry:1");
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -20,7 +23,10 @@ test "4.1 under the limit" {
 
 test "4.2 at the limit" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000, .fanout_max = 100 });
+    try world.open(.{
+        .quiet_ms = 1000,
+        .fanout_max = 100,
+    });
     defer world.close();
     try record_many(&world, "/a", 100, "entry:1");
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -29,7 +35,10 @@ test "4.2 at the limit" {
 
 test "4.3 over the limit refuses and keeps the batch" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000, .fanout_max = 100 });
+    try world.open(.{
+        .quiet_ms = 1000,
+        .fanout_max = 100,
+    });
     defer world.close();
     try record_many(&world, "/a", 101, "entry:1");
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -44,7 +53,10 @@ test "4.3 over the limit refuses and keeps the batch" {
 
 test "4.4 the limit is per batch, across keys" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000, .fanout_max = 100 });
+    try world.open(.{
+        .quiet_ms = 1000,
+        .fanout_max = 100,
+    });
     defer world.close();
     try record_many(&world, "/a", 60, "entry:1");
     try record_many(&world, "/b", 60, "entry:2");
@@ -55,7 +67,10 @@ test "4.4 the limit is per batch, across keys" {
 
 test "4.5 a key with no dependents never trips it" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000, .fanout_max = 1 });
+    try world.open(.{
+        .quiet_ms = 1000,
+        .fanout_max = 1,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:999"}, 0);

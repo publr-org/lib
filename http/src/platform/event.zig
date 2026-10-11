@@ -309,7 +309,9 @@ pub const Loop = struct {
                     .windows => _ = SetConsoleCtrlHandler(&console_control_handler, 1),
                     .linux => {
                         const action: linux.Sigaction = .{
-                            .handler = .{ .handler = &linux_signal_handler },
+                            .handler = .{
+                                .handler = &linux_signal_handler,
+                            },
                             .mask = std.mem.zeroes(linux.sigset_t),
                             .flags = 0,
                         };
@@ -318,7 +320,9 @@ pub const Loop = struct {
                     },
                     else => {
                         const action: libc.Sigaction = .{
-                            .handler = .{ .handler = &posix_signal_handler },
+                            .handler = .{
+                                .handler = &posix_signal_handler,
+                            },
                             .mask = std.mem.zeroes(libc.sigset_t),
                             .flags = 0,
                         };
@@ -563,7 +567,9 @@ pub const Loop = struct {
 
         var event: linux.epoll_event = .{
             .events = mask | linux.EPOLL.RDHUP,
-            .data = .{ .u64 = token },
+            .data = .{
+                .u64 = token,
+            },
         };
         const result = linux.epoll_ctl(loop.queue, operation, fd, &event);
 
@@ -577,7 +583,11 @@ pub const Loop = struct {
 fn poll_call(fds: []PollFd, timeout_ms: i32) error{PollFailed}!u32 {
     if (builtin.os.tag == .windows) {
         if (fds.len == 0) {
-            var dummy = [1]PollFd{.{ .fd = ~@as(usize, 0), .events = 0, .revents = 0 }};
+            var dummy = [1]PollFd{.{
+                .fd = ~@as(usize, 0),
+                .events = 0,
+                .revents = 0,
+            }};
             const ready = WSAPoll(&dummy, 1, timeout_ms);
             return if (ready < 0) error.PollFailed else @intCast(ready);
         }
@@ -631,7 +641,9 @@ fn ignore_signal(signal: libc.SIG) void {
     std.debug.assert(@intFromEnum(signal) > 0);
 
     const action: libc.Sigaction = .{
-        .handler = .{ .handler = libc.SIG.IGN },
+        .handler = .{
+            .handler = libc.SIG.IGN,
+        },
         .mask = std.mem.zeroes(libc.sigset_t),
         .flags = 0,
     };

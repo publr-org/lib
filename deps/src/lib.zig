@@ -129,7 +129,10 @@ pub const Index = struct {
             return error.InvalidLimit;
         }
         try db.exec(schema);
-        return .{ .db = db, .options = options };
+        return .{
+            .db = db,
+            .options = options,
+        };
     }
 
     fn check_name(index: *const Index, name: []const u8) Error!void {
@@ -206,7 +209,9 @@ pub const Index = struct {
 
         var keys: std.ArrayList([]const u8) = .empty;
         while (try select.step()) {
-            const row = try select.read(struct { key: []const u8 }, arena);
+            const row = try select.read(struct {
+                key: []const u8,
+            }, arena);
             try keys.append(arena, row.key);
         }
         return keys.toOwnedSlice(arena);
@@ -224,7 +229,9 @@ pub const Index = struct {
             select.reset();
             try select.bind_text(1, key);
             while (try select.step()) {
-                const artifact = try select.read(struct { artifact: []const u8 }, arena);
+                const artifact = try select.read(struct {
+                    artifact: []const u8,
+                }, arena);
                 try set.put(arena, artifact.artifact, {});
             }
         }
@@ -254,7 +261,11 @@ pub const Index = struct {
     pub fn changes_since(index: *Index, arena: std.mem.Allocator, after: u64) Error!Changes {
         if (index.db.transaction_depth != 0) return error.UncommittedRead;
         const latest = try index.revision();
-        const reset: Changes = .{ .revision = latest, .reset = true, .keys = &.{} };
+        const reset: Changes = .{
+            .revision = latest,
+            .reset = true,
+            .keys = &.{},
+        };
         if (after < try index.replay_floor() or after > latest) return reset;
         var select = try index.db.prepare("SELECT DISTINCT key FROM deps_changes WHERE revision > ?1 AND revision <= ?2 ORDER BY key LIMIT ?3");
         defer select.finalize();
@@ -264,11 +275,17 @@ pub const Index = struct {
         var keys: std.ArrayList([]const u8) = .empty;
         while (try select.step()) {
             if (keys.items.len == index.options.keys_max) return reset;
-            const row = try select.read(struct { key: []const u8 }, arena);
+            const row = try select.read(struct {
+                key: []const u8,
+            }, arena);
             try keys.append(arena, row.key);
         }
         if (after < try index.replay_floor()) return reset;
-        return .{ .revision = latest, .reset = false, .keys = try keys.toOwnedSlice(arena) };
+        return .{
+            .revision = latest,
+            .reset = false,
+            .keys = try keys.toOwnedSlice(arena),
+        };
     }
 
     fn replay_floor(index: *Index) Error!u64 {
@@ -350,11 +367,16 @@ pub const Index = struct {
         try select.bind_int(1, @intCast(batch_no));
         var keys: std.ArrayList([]const u8) = .empty;
         while (try select.step()) {
-            const row = try select.read(struct { key: []const u8 }, arena);
+            const row = try select.read(struct {
+                key: []const u8,
+            }, arena);
             try keys.append(arena, row.key);
         }
         std.mem.sort([]const u8, keys.items, {}, string_less_than);
-        return .{ .no = batch_no, .keys = keys.items };
+        return .{
+            .no = batch_no,
+            .keys = keys.items,
+        };
     }
 
     /// The batch's affected artifacts — each once, sorted — computed against
@@ -449,7 +471,9 @@ pub const Index = struct {
             defer select.finalize();
             try select.bind_int(1, @intCast(number));
             const collected = while (try select.step()) {
-                const row = select.read(struct { key: []const u8 }, fixed.allocator()) catch break false;
+                const row = select.read(struct {
+                    key: []const u8,
+                }, fixed.allocator()) catch break false;
                 keys.append(fixed.allocator(), row.key) catch break false;
             } else true;
             // A batch too large for the buffer is still sealed; the observer
@@ -482,7 +506,13 @@ fn string_less_than(_: void, a: []const u8, b: []const u8) bool {
 test "options are validated" {
     // No database is touched before validation, so a plain struct suffices.
     var db: sqlite.Database = undefined;
-    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{ .queue_cap = 0 }));
-    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{ .fanout_max = 0 }));
-    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{ .name_len_max = 0 }));
+    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{
+        .queue_cap = 0,
+    }));
+    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{
+        .fanout_max = 0,
+    }));
+    try std.testing.expectError(error.InvalidLimit, Index.open(&db, .{
+        .name_len_max = 0,
+    }));
 }

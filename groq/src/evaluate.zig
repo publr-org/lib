@@ -23,7 +23,10 @@ pub const Error = error{ OutOfMemory, TooDeep, TooMuchWork, DatasetFailed, OutOf
 pub const Dataset = dataset_module.Dataset;
 
 /// A reference the caller may not follow, made `null`: which record, and why.
-pub const Problem = struct { id: []const u8, reason: []const u8 };
+pub const Problem = struct {
+    id: []const u8,
+    reason: []const u8,
+};
 
 pub const Context = struct {
     arena: std.mem.Allocator,
@@ -46,7 +49,10 @@ pub const Scope = struct {
 pub fn run(context: *Context) Error!Value {
     std.debug.assert(context.query.root < context.query.nodes.len);
 
-    const root: Scope = .{ .this = .null, .parent = null };
+    const root: Scope = .{
+        .this = .null,
+        .parent = null,
+    };
 
     return evaluate(context, context.query.root, &root, 0);
 }
@@ -70,7 +76,9 @@ pub fn evaluate(context: *Context, index: Index, scope: *const Scope, depth: u32
         .literal => |literal| literal,
         .this => scope.this,
         .this_attribute => |name| attribute_of(scope.this, name),
-        .everything => .{ .array = try context.dataset.everything(context.arena) },
+        .everything => .{
+            .array = try context.dataset.everything(context.arena),
+        },
         .parent => |levels| parent_of(scope, levels),
         .param => |name| context.params.get(name) orelse .null,
         .group => |held| evaluate(context, held, scope, inner),
@@ -118,7 +126,9 @@ fn not_of(value: Value) Value {
         return .null;
     }
 
-    return .{ .boolean = !value.boolean };
+    return .{
+        .boolean = !value.boolean,
+    };
 }
 
 fn array_of(
@@ -139,7 +149,9 @@ fn array_of(
         }
     }
 
-    return .{ .array = items.items };
+    return .{
+        .array = items.items,
+    };
 }
 
 pub fn object_of(
@@ -177,7 +189,9 @@ pub fn object_of(
         }
     }
 
-    return .{ .object = builder.object() };
+    return .{
+        .object = builder.object(),
+    };
 }
 
 fn spread_into(context: *Context, builder: *value_module.ObjectBuilder, base: Value) Error!void {
@@ -209,9 +223,15 @@ fn range_of(
 
     const range = try context.arena.create(value_module.Range);
 
-    range.* = .{ .start = start, .end = end, .exclusive = exclusive };
+    range.* = .{
+        .start = start,
+        .end = end,
+        .exclusive = exclusive,
+    };
 
-    return .{ .range = range };
+    return .{
+        .range = range,
+    };
 }
 
 fn pair_of(
@@ -228,7 +248,9 @@ fn pair_of(
         .second = try evaluate(context, second, scope, depth),
     };
 
-    return .{ .pair = pair };
+    return .{
+        .pair = pair,
+    };
 }
 
 fn binary_of(
@@ -251,11 +273,17 @@ fn binary_of(
     return switch (operator) {
         .and_ => and_of(left, right),
         .or_ => or_of(left, right),
-        .equal => .{ .boolean = value_module.equal(left, right) },
-        .not_equal => .{ .boolean = !value_module.equal(left, right) },
+        .equal => .{
+            .boolean = value_module.equal(left, right),
+        },
+        .not_equal => .{
+            .boolean = !value_module.equal(left, right),
+        },
         .less, .less_equal, .greater, .greater_equal => compared(operator, left, right),
         .in_ => in_array(left, right),
-        .match => .{ .boolean = try text_match.matches(context.arena, left, right) },
+        .match => .{
+            .boolean = try text_match.matches(context.arena, left, right),
+        },
         .plus => operators.plus(context.arena, left, right),
         .minus => operators.minus(left, right),
         .star => operators.star(left, right),
@@ -316,13 +344,15 @@ fn or_of(left: Value, right: Value) Value {
 fn compared(operator: tree.Operator, left: Value, right: Value) Value {
     const order = value_module.partial_compare(left, right) orelse return .null;
 
-    return .{ .boolean = switch (operator) {
-        .less => order == .less,
-        .less_equal => order != .greater,
-        .greater => order == .greater,
-        .greater_equal => order != .less,
-        else => unreachable,
-    } };
+    return .{
+        .boolean = switch (operator) {
+            .less => order == .less,
+            .less_equal => order != .greater,
+            .greater => order == .greater,
+            .greater_equal => order != .less,
+            else => unreachable,
+        },
+    };
 }
 
 fn in_array(left: Value, right: Value) Value {

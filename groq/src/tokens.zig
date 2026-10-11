@@ -124,42 +124,141 @@ fn space_width(rest: []const u8) u32 {
     }
 }
 
-const Symbol = struct { text: []const u8, kind: Kind };
+const Symbol = struct {
+    text: []const u8,
+    kind: Kind,
+};
 
 /// Longest first, so `...` is not read as `..` and `.`.
 const symbols = [_]Symbol{
-    .{ .text = "...", .kind = .dot_dot_dot },
-    .{ .text = "..", .kind = .dot_dot },
-    .{ .text = "**", .kind = .star_star },
-    .{ .text = "::", .kind = .colon_colon },
-    .{ .text = "->", .kind = .arrow },
-    .{ .text = "=>", .kind = .pair_arrow },
-    .{ .text = "==", .kind = .equal },
-    .{ .text = "!=", .kind = .not_equal },
-    .{ .text = "<=", .kind = .less_equal },
-    .{ .text = ">=", .kind = .greater_equal },
-    .{ .text = "&&", .kind = .and_ },
-    .{ .text = "||", .kind = .or_ },
-    .{ .text = "*", .kind = .star },
-    .{ .text = "@", .kind = .at },
-    .{ .text = "^", .kind = .caret },
-    .{ .text = ".", .kind = .dot },
-    .{ .text = ",", .kind = .comma },
-    .{ .text = ":", .kind = .colon },
-    .{ .text = "|", .kind = .pipe },
-    .{ .text = "[", .kind = .left_bracket },
-    .{ .text = "]", .kind = .right_bracket },
-    .{ .text = "{", .kind = .left_brace },
-    .{ .text = "}", .kind = .right_brace },
-    .{ .text = "(", .kind = .left_paren },
-    .{ .text = ")", .kind = .right_paren },
-    .{ .text = "<", .kind = .less },
-    .{ .text = ">", .kind = .greater },
-    .{ .text = "!", .kind = .not_ },
-    .{ .text = "+", .kind = .plus },
-    .{ .text = "-", .kind = .minus },
-    .{ .text = "/", .kind = .slash },
-    .{ .text = "%", .kind = .percent },
+    .{
+        .text = "...",
+        .kind = .dot_dot_dot,
+    },
+    .{
+        .text = "..",
+        .kind = .dot_dot,
+    },
+    .{
+        .text = "**",
+        .kind = .star_star,
+    },
+    .{
+        .text = "::",
+        .kind = .colon_colon,
+    },
+    .{
+        .text = "->",
+        .kind = .arrow,
+    },
+    .{
+        .text = "=>",
+        .kind = .pair_arrow,
+    },
+    .{
+        .text = "==",
+        .kind = .equal,
+    },
+    .{
+        .text = "!=",
+        .kind = .not_equal,
+    },
+    .{
+        .text = "<=",
+        .kind = .less_equal,
+    },
+    .{
+        .text = ">=",
+        .kind = .greater_equal,
+    },
+    .{
+        .text = "&&",
+        .kind = .and_,
+    },
+    .{
+        .text = "||",
+        .kind = .or_,
+    },
+    .{
+        .text = "*",
+        .kind = .star,
+    },
+    .{
+        .text = "@",
+        .kind = .at,
+    },
+    .{
+        .text = "^",
+        .kind = .caret,
+    },
+    .{
+        .text = ".",
+        .kind = .dot,
+    },
+    .{
+        .text = ",",
+        .kind = .comma,
+    },
+    .{
+        .text = ":",
+        .kind = .colon,
+    },
+    .{
+        .text = "|",
+        .kind = .pipe,
+    },
+    .{
+        .text = "[",
+        .kind = .left_bracket,
+    },
+    .{
+        .text = "]",
+        .kind = .right_bracket,
+    },
+    .{
+        .text = "{",
+        .kind = .left_brace,
+    },
+    .{
+        .text = "}",
+        .kind = .right_brace,
+    },
+    .{
+        .text = "(",
+        .kind = .left_paren,
+    },
+    .{
+        .text = ")",
+        .kind = .right_paren,
+    },
+    .{
+        .text = "<",
+        .kind = .less,
+    },
+    .{
+        .text = ">",
+        .kind = .greater,
+    },
+    .{
+        .text = "!",
+        .kind = .not_,
+    },
+    .{
+        .text = "+",
+        .kind = .plus,
+    },
+    .{
+        .text = "-",
+        .kind = .minus,
+    },
+    .{
+        .text = "/",
+        .kind = .slash,
+    },
+    .{
+        .text = "%",
+        .kind = .percent,
+    },
 };
 
 fn next(arena: std.mem.Allocator, query: []const u8, at: u32, length: *u32) Error!Token {
@@ -167,7 +266,11 @@ fn next(arena: std.mem.Allocator, query: []const u8, at: u32, length: *u32) Erro
 
     if (at == query.len) {
         length.* = 0;
-        return .{ .kind = .end, .text = "", .at = at };
+        return .{
+            .kind = .end,
+            .text = "",
+            .at = at,
+        };
     }
 
     const rest = query[at..];
@@ -197,14 +300,22 @@ fn next(arena: std.mem.Allocator, query: []const u8, at: u32, length: *u32) Erro
 
         const kind: Kind = if (char == '$') .param else .identifier;
 
-        return .{ .kind = kind, .text = query[start..end], .at = at };
+        return .{
+            .kind = kind,
+            .text = query[start..end],
+            .at = at,
+        };
     }
 
     for (symbols) |symbol| {
         if (std.mem.startsWith(u8, rest, symbol.text)) {
             length.* = @intCast(symbol.text.len);
 
-            return .{ .kind = symbol.kind, .text = symbol.text, .at = at };
+            return .{
+                .kind = symbol.kind,
+                .text = symbol.text,
+                .at = at,
+            };
         }
     }
 
@@ -238,7 +349,11 @@ fn number(query: []const u8, at: u32, length: *u32) Error!Token {
 
     length.* = end - at;
 
-    return .{ .kind = .number, .text = query[at..end], .at = at };
+    return .{
+        .kind = .number,
+        .text = query[at..end],
+        .at = at,
+    };
 }
 
 fn digits(query: []const u8, start: u32) u32 {
@@ -284,7 +399,11 @@ fn string(arena: std.mem.Allocator, query: []const u8, at: u32, length: *u32) Er
 
     length.* = index + 1 - at;
 
-    return .{ .kind = .string, .text = out.items, .at = at };
+    return .{
+        .kind = .string,
+        .text = out.items,
+        .at = at,
+    };
 }
 
 fn escape(

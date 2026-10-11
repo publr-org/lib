@@ -94,7 +94,12 @@ fn clear_pending(server: *Engine, slot: *Slot) void {
     }
 }
 
-const NextRequest = union(enum) { wait, closed, streamed, ready: request_module.Request };
+const NextRequest = union(enum) {
+    wait,
+    closed,
+    streamed,
+    ready: request_module.Request,
+};
 
 fn next_request(server: *Engine, slot: *Slot) NextRequest {
     std.debug.assert(slot.state == .reading);
@@ -156,7 +161,9 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
         return .wait;
     }
 
-    return .{ .ready = request };
+    return .{
+        .ready = request,
+    };
 }
 
 /// The head is in and the app layer took the body as a stream: what of the body is

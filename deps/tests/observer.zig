@@ -69,7 +69,9 @@ fn expect_lines(recorder: *const Recorder, expected: []const []const u8) !void {
 
 test "8.1 silence is free" {
     var world: helper.World = undefined;
-    try world.open(.{ .quiet_ms = 1000 });
+    try world.open(.{
+        .quiet_ms = 1000,
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
@@ -77,9 +79,13 @@ test "8.1 silence is free" {
 }
 
 test "8.2 what changed, coalescing visible" {
-    var recorder: Recorder = .{ .arena = undefined };
+    var recorder: Recorder = .{
+        .arena = undefined,
+    };
     var world: helper.World = undefined;
-    try watched(&world, .{ .quiet_ms = 1000 }, &recorder);
+    try watched(&world, .{
+        .quiet_ms = 1000,
+    }, &recorder);
     defer world.close();
     for (0..3) |_| try world.index.invalidate(&.{"entry:1"}, 0);
     try expect_lines(&recorder, &.{
@@ -90,9 +96,13 @@ test "8.2 what changed, coalescing visible" {
 }
 
 test "8.3 + 8.4 the resolved graph, the plan, the execution" {
-    var recorder: Recorder = .{ .arena = undefined };
+    var recorder: Recorder = .{
+        .arena = undefined,
+    };
     var world: helper.World = undefined;
-    try watched(&world, .{ .quiet_ms = 1000 }, &recorder);
+    try watched(&world, .{
+        .quiet_ms = 1000,
+    }, &recorder);
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/b", &.{ "entry:1", "entry:2" });
@@ -117,9 +127,14 @@ test "8.3 + 8.4 the resolved graph, the plan, the execution" {
 }
 
 test "8.5 a refusal is an event, and no execution follows" {
-    var recorder: Recorder = .{ .arena = undefined };
+    var recorder: Recorder = .{
+        .arena = undefined,
+    };
     var world: helper.World = undefined;
-    try watched(&world, .{ .quiet_ms = 1000, .fanout_max = 1 }, &recorder);
+    try watched(&world, .{
+        .quiet_ms = 1000,
+        .fanout_max = 1,
+    }, &recorder);
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/b", &.{"entry:1"});
@@ -135,9 +150,14 @@ test "8.5 a refusal is an event, and no execution follows" {
 }
 
 test "8.6 batches are distinguishable and never interleave" {
-    var recorder: Recorder = .{ .arena = undefined };
+    var recorder: Recorder = .{
+        .arena = undefined,
+    };
     var world: helper.World = undefined;
-    try watched(&world, .{ .quiet_ms = 60_000, .queue_cap = 2 }, &recorder);
+    try watched(&world, .{
+        .quiet_ms = 60_000,
+        .queue_cap = 2,
+    }, &recorder);
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/c", &.{"entry:3"});
@@ -164,9 +184,13 @@ test "8.6 batches are distinguishable and never interleave" {
 }
 
 test "8.7 the observer sees what the API would say" {
-    var recorder: Recorder = .{ .arena = undefined };
+    var recorder: Recorder = .{
+        .arena = undefined,
+    };
     var world: helper.World = undefined;
-    try watched(&world, .{ .quiet_ms = 1000 }, &recorder);
+    try watched(&world, .{
+        .quiet_ms = 1000,
+    }, &recorder);
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);

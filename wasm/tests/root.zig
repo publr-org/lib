@@ -34,8 +34,16 @@ fn host_nested(env: *wasm.Env) callconv(.c) i32 {
 }
 
 const imports = [_]wasm.Import{
-    .{ .name = "host_echo", .signature = "(ii)i", .function = &host_echo },
-    .{ .name = "host_nested", .signature = "()i", .function = &host_nested },
+    .{
+        .name = "host_echo",
+        .signature = "(ii)i",
+        .function = &host_echo,
+    },
+    .{
+        .name = "host_nested",
+        .signature = "()i",
+        .function = &host_nested,
+    },
 };
 
 const Fixture = struct {
@@ -53,7 +61,10 @@ const Fixture = struct {
         fixture.bytes = try std.testing.allocator.dupe(u8, guest_bytes);
         errdefer std.testing.allocator.free(fixture.bytes);
 
-        try fixture.runtime.init(.{ .heap = fixture.heap, .imports = &imports });
+        try fixture.runtime.init(.{
+            .heap = fixture.heap,
+            .imports = &imports,
+        });
         errdefer fixture.runtime.deinit();
         fixture.module = try wasm.Module.load(&fixture.runtime, fixture.bytes, &fixture.problem);
         errdefer fixture.module.unload();
@@ -160,7 +171,10 @@ test "bytes that are not a module are refused with a reason" {
     defer std.testing.allocator.free(heap);
 
     var runtime: wasm.Runtime = undefined;
-    try runtime.init(.{ .heap = heap, .imports = &imports });
+    try runtime.init(.{
+        .heap = heap,
+        .imports = &imports,
+    });
     defer runtime.deinit();
 
     var junk = "\x00asm\x01\x00\x00\x00\x01\xff".*;

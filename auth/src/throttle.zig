@@ -183,7 +183,10 @@ pub const Throttle = struct {
 
         std.debug.assert(slot.key == 0 or slot.touched_ms <= now_ms);
 
-        slot.* = .{ .key = key, .touched_ms = now_ms };
+        slot.* = .{
+            .key = key,
+            .touched_ms = now_ms,
+        };
 
         return slot;
     }
@@ -229,7 +232,12 @@ test "a blocked subject survives a flood of new subjects; a full table refuses" 
 
     // Block every slot, then a new subject is refused for as long as the soonest block.
     for (&throttle.slots) |*slot| {
-        slot.* = .{ .key = 1, .failures = Throttle.failures_free + 1, .blocked_until_ms = 5000, .touched_ms = 3000 };
+        slot.* = .{
+            .key = 1,
+            .failures = Throttle.failures_free + 1,
+            .blocked_until_ms = 5000,
+            .touched_ms = 3000,
+        };
     }
     try std.testing.expectEqual(@as(i64, 2000), throttle.record_failure(throttle.key_for("late"), 3000));
     try std.testing.expectEqual(@as(i64, 0), throttle.wait_ms(throttle.key_for("late"), 3000));

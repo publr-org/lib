@@ -6,7 +6,9 @@ const root = "vendor/wamr/core/";
 /// `publr_wasm` gets a self-contained binary.
 pub fn build(b: *std.Build) *std.Build.Module {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{
+        .preferred_optimize_mode = .ReleaseSafe,
+    });
 
     const library = b.addModule("publr_wasm", .{
         .root_source_file = b.path("src/lib.zig"),
@@ -47,7 +49,10 @@ fn add_runtime(b: *std.Build, library: *std.Build.Module, target: std.Target) vo
     library.addIncludePath(b.path(b.fmt(root ++ "shared/platform/{s}", .{platform})));
 
     inline for (sources) |source| {
-        library.addCSourceFile(.{ .file = b.path(root ++ source), .flags = flags });
+        library.addCSourceFile(.{
+            .file = b.path(root ++ source),
+            .flags = flags,
+        });
     }
 
     library.addCSourceFile(.{

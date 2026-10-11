@@ -38,7 +38,9 @@ pub fn array_namespace(
             }
         }
 
-        return .{ .array = kept.items };
+        return .{
+            .array = kept.items,
+        };
     }
 
     if (std.mem.eql(u8, called.name, "unique")) {
@@ -91,7 +93,9 @@ fn unique(arena: std.mem.Allocator, items: []const Value) Error!Value {
         }
     }
 
-    return .{ .array = kept.items };
+    return .{
+        .array = kept.items,
+    };
 }
 
 fn join(arena: std.mem.Allocator, items: []const Value, separator: Value) Error!Value {
@@ -117,7 +121,9 @@ fn join(arena: std.mem.Allocator, items: []const Value, separator: Value) Error!
         try out.appendSlice(arena, text.string);
     }
 
-    return .{ .string = out.items };
+    return .{
+        .string = out.items,
+    };
 }
 
 pub fn string_namespace(
@@ -143,7 +149,9 @@ pub fn string_namespace(
     }
 
     if (std.mem.eql(u8, called.name, "startsWith")) {
-        return .{ .boolean = std.mem.startsWith(u8, first.string, second.string) };
+        return .{
+            .boolean = std.mem.startsWith(u8, first.string, second.string),
+        };
     }
 
     return split(context.arena, first.string, second.string);
@@ -155,7 +163,9 @@ fn split(arena: std.mem.Allocator, text: []const u8, separator: []const u8) Erro
     var parts: std.ArrayList(Value) = .empty;
 
     if (text.len == 0) {
-        return .{ .array = &.{} };
+        return .{
+            .array = &.{},
+        };
     }
 
     if (separator.len == 0) {
@@ -163,19 +173,27 @@ fn split(arena: std.mem.Allocator, text: []const u8, separator: []const u8) Erro
         var points = view.iterator();
 
         while (points.nextCodepointSlice()) |point| {
-            try parts.append(arena, .{ .string = point });
+            try parts.append(arena, .{
+                .string = point,
+            });
         }
 
-        return .{ .array = parts.items };
+        return .{
+            .array = parts.items,
+        };
     }
 
     var pieces = std.mem.splitSequence(u8, text, separator);
 
     while (pieces.next()) |piece| {
-        try parts.append(arena, .{ .string = piece });
+        try parts.append(arena, .{
+            .string = piece,
+        });
     }
 
-    return .{ .array = parts.items };
+    return .{
+        .array = parts.items,
+    };
 }
 
 pub fn math_namespace(
@@ -224,5 +242,7 @@ pub fn math_namespace(
         return Value.of_number(total / @as(f64, @floatFromInt(count)));
     }
 
-    return .{ .number = if (std.mem.eql(u8, name, "min")) lowest.? else highest.? };
+    return .{
+        .number = if (std.mem.eql(u8, name, "min")) lowest.? else highest.?,
+    };
 }

@@ -21,7 +21,10 @@ pub const nodes_max: u32 = 8192;
 pub const Error = error{ Invalid, OutOfMemory };
 
 /// Why a query was refused: where, and what was expected.
-pub const Problem = struct { at: u32 = 0, message: []const u8 = "" };
+pub const Problem = struct {
+    at: u32 = 0,
+    message: []const u8 = "",
+};
 
 pub fn parse(arena: std.mem.Allocator, text: []const u8, problem: *Problem) Error!tree.Query {
     return parse_with(arena, text, .{}, problem);
@@ -38,7 +41,9 @@ pub fn parse_with(
     std.debug.assert(depth_max > 0);
 
     const tokens = tokens_module.tokenize(arena, text) catch |err| {
-        problem.* = .{ .message = "a character GROQ does not have, a bad escape or a number" };
+        problem.* = .{
+            .message = "a character GROQ does not have, a bad escape or a number",
+        };
         return err;
     };
     var parser: Parser = .{
@@ -53,7 +58,10 @@ pub fn parse_with(
         return parser.fail("more after the end of the query");
     }
 
-    return .{ .nodes = parser.nodes.items, .root = root };
+    return .{
+        .nodes = parser.nodes.items,
+        .root = root,
+    };
 }
 
 /// Levels of section 10, lowest first; an infix operator binds at its level.
@@ -125,7 +133,10 @@ pub const Parser = struct {
     pub fn fail(parser: *Parser, message: []const u8) error{Invalid} {
         std.debug.assert(message.len > 0);
 
-        parser.problem.* = .{ .at = parser.peek().at, .message = message };
+        parser.problem.* = .{
+            .at = parser.peek().at,
+            .message = message,
+        };
 
         return error.Invalid;
     }
@@ -187,7 +198,12 @@ pub const Parser = struct {
             _ = parser.take();
             const second = try parser.expression(Level.pair + 1, depth);
 
-            return parser.add(.{ .pair = .{ .first = left, .second = second } });
+            return parser.add(.{
+                .pair = .{
+                    .first = left,
+                    .second = second,
+                },
+            });
         }
 
         if (token.kind == .or_ and minimum <= Level.or_) {
@@ -214,7 +230,11 @@ pub const Parser = struct {
 
                 _ = parser.take();
 
-                return parser.add(if (descending) .{ .desc = left } else .{ .asc = left });
+                return parser.add(if (descending) .{
+                    .desc = left,
+                } else .{
+                    .asc = left,
+                });
             }
         }
 
@@ -224,11 +244,13 @@ pub const Parser = struct {
             _ = parser.take();
             const end = try parser.expression(Level.range + 1, depth);
 
-            return parser.add(.{ .range = .{
-                .start = left,
-                .end = end,
-                .exclusive = token.kind == .dot_dot_dot,
-            } });
+            return parser.add(.{
+                .range = .{
+                    .start = left,
+                    .end = end,
+                    .exclusive = token.kind == .dot_dot_dot,
+                },
+            });
         }
 
         return parser.arithmetic(left, minimum, depth);
@@ -274,7 +296,13 @@ pub const Parser = struct {
 
         const right = try parser.expression(right_minimum, depth);
 
-        return parser.add(.{ .binary = .{ .operator = operator, .left = left, .right = right } });
+        return parser.add(.{
+            .binary = .{
+                .operator = operator,
+                .left = left,
+                .right = right,
+            },
+        });
     }
 
     fn prefix(parser: *Parser, depth: u32) Error!Index {
@@ -285,15 +313,21 @@ pub const Parser = struct {
         switch (token.kind) {
             .minus => {
                 _ = parser.take();
-                return parser.add(.{ .negate = try parser.expression(Level.negate + 1, depth) });
+                return parser.add(.{
+                    .negate = try parser.expression(Level.negate + 1, depth),
+                });
             },
             .plus => {
                 _ = parser.take();
-                return parser.add(.{ .positive = try parser.unary_operand(depth) });
+                return parser.add(.{
+                    .positive = try parser.unary_operand(depth),
+                });
             },
             .not_ => {
                 _ = parser.take();
-                return parser.add(.{ .not_ = try parser.unary_operand(depth) });
+                return parser.add(.{
+                    .not_ = try parser.unary_operand(depth),
+                });
             },
             else => return values.postfix(parser, try values.primary(parser, depth), depth),
         }
