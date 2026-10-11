@@ -18,16 +18,24 @@ pub const Value = union(enum) {
     pair: *const Pair,
     range: *const Range,
 
-    pub const true_value: Value = .{ .boolean = true };
-    pub const false_value: Value = .{ .boolean = false };
+    pub const true_value: Value = .{
+        .boolean = true,
+    };
+    pub const false_value: Value = .{
+        .boolean = false,
+    };
 
     pub fn of_bool(truth: bool) Value {
-        return .{ .boolean = truth };
+        return .{
+            .boolean = truth,
+        };
     }
 
     /// A number, `null` when it is not finite (GROQ has no Infinity or NaN).
     pub fn of_number(number: f64) Value {
-        return if (std.math.isFinite(number)) .{ .number = number } else .null;
+        return if (std.math.isFinite(number)) .{
+            .number = number,
+        } else .null;
     }
 
     pub fn is_true(value: Value) bool {
@@ -53,8 +61,15 @@ pub const Object = struct {
     }
 };
 
-pub const Pair = struct { first: Value, second: Value };
-pub const Range = struct { start: Value, end: Value, exclusive: bool };
+pub const Pair = struct {
+    first: Value,
+    second: Value,
+};
+pub const Range = struct {
+    start: Value,
+    end: Value,
+    exclusive: bool,
+};
 
 /// An object built attribute by attribute: a key set twice keeps its first place and its
 /// last value.
@@ -84,7 +99,10 @@ pub const ObjectBuilder = struct {
     pub fn object(builder: *const ObjectBuilder) Object {
         std.debug.assert(builder.keys.items.len == builder.values.items.len);
 
-        return .{ .keys = builder.keys.items, .values = builder.values.items };
+        return .{
+            .keys = builder.keys.items,
+            .values = builder.values.items,
+        };
     }
 };
 
@@ -170,11 +188,17 @@ pub fn from_json(arena: std.mem.Allocator, json: std.json.Value) error{OutOfMemo
 
     return switch (json) {
         .null => .null,
-        .bool => |truth| .{ .boolean = truth },
-        .integer => |number| .{ .number = @floatFromInt(number) },
+        .bool => |truth| .{
+            .boolean = truth,
+        },
+        .integer => |number| .{
+            .number = @floatFromInt(number),
+        },
         .float => |number| Value.of_number(number),
         .number_string => |text| Value.of_number(std.fmt.parseFloat(f64, text) catch return .null),
-        .string => |text| .{ .string = text },
+        .string => |text| .{
+            .string = text,
+        },
         .array => |array| {
             const items = try arena.alloc(Value, array.items.len);
 
@@ -182,7 +206,9 @@ pub fn from_json(arena: std.mem.Allocator, json: std.json.Value) error{OutOfMemo
                 value.* = try from_json(arena, item);
             }
 
-            return .{ .array = items };
+            return .{
+                .array = items,
+            };
         },
         .object => |object| {
             const keys = try arena.alloc([]const u8, object.count());
@@ -195,7 +221,77 @@ pub fn from_json(arena: std.mem.Allocator, json: std.json.Value) error{OutOfMemo
                 held[index] = try from_json(arena, entry.value_ptr.*);
             }
 
-            return .{ .object = .{ .keys = keys, .values = held } };
+            return .{
+                .object = .{
+                    .keys = keys,
+                    .values = held,
+                },
+            };
+        },
+    };
+}
+
+/// The value with everything it holds copied into `arena`, for a value read in memory that
+/// is given back before the answer is.
+pub fn copy(arena: std.mem.Allocator, value: Value) error{OutOfMemory}!Value {
+    std.debug.assert(value != .number or std.math.isFinite(value.number));
+
+    return switch (value) {
+        .null, .boolean, .number, .datetime => value,
+        .string => |text| .{
+            .string = try arena.dupe(u8, text),
+        },
+        .array => |items| {
+            const copied = try arena.alloc(Value, items.len);
+
+            for (items, copied) |item, *each| {
+                each.* = try copy(arena, item);
+            }
+
+            return .{
+                .array = copied,
+            };
+        },
+        .object => |object| {
+            const keys = try arena.alloc([]const u8, object.keys.len);
+            const held = try arena.alloc(Value, object.values.len);
+
+            for (object.keys, object.values, keys, held) |key, item, *kept_key, *kept| {
+                kept_key.* = try arena.dupe(u8, key);
+                kept.* = try copy(arena, item);
+            }
+
+            return .{
+                .object = .{
+                    .keys = keys,
+                    .values = held,
+                },
+            };
+        },
+        .pair => |pair| {
+            const kept = try arena.create(Pair);
+
+            kept.* = .{
+                .first = try copy(arena, pair.first),
+                .second = try copy(arena, pair.second),
+            };
+
+            return .{
+                .pair = kept,
+            };
+        },
+        .range => |range| {
+            const kept = try arena.create(Range);
+
+            kept.* = .{
+                .start = try copy(arena, range.start),
+                .end = try copy(arena, range.end),
+                .exclusive = range.exclusive,
+            };
+
+            return .{
+                .range = kept,
+            };
         },
     };
 }
@@ -297,10 +393,59 @@ pub fn to_json(arena: std.mem.Allocator, value: Value) ![]const u8 {
 
 test "equality and order follow the spec: null equals null, other types do not mix" {
     try std.testing.expect(equal(.null, .null));
-    try std.testing.expect(!equal(.{ .number = 1 }, .null));
-    try std.testing.expect(equal(.{ .number = 1 }, .{ .number = 1.0 }));
-    try std.testing.expect(!equal(.{ .array = &.{} }, .{ .array = &.{} }));
-    try std.testing.expect(partial_compare(.{ .number = 2 }, .{ .string = "1" }) == null);
-    try std.testing.expectEqual(Order.less, total_compare(.{ .number = 9 }, .{ .string = "a" }));
-    try std.testing.expectEqual(Order.equal, total_compare(.null, .{ .array = &.{} }));
+    try std.testing.expect(!equal(.{
+        .number = 1,
+    }, .null));
+    try std.testing.expect(equal(.{
+        .number = 1,
+    }, .{
+        .number = 1.0,
+    }));
+    try std.testing.expect(!equal(.{
+        .array = &.{},
+    }, .{
+        .array = &.{},
+    }));
+    try std.testing.expect(partial_compare(.{
+        .number = 2,
+    }, .{
+        .string = "1",
+    }) == null);
+    try std.testing.expectEqual(Order.less, total_compare(.{
+        .number = 9,
+    }, .{
+        .string = "a",
+    }));
+    try std.testing.expectEqual(Order.equal, total_compare(.null, .{
+        .array = &.{},
+    }));
+}
+
+test "a copy holds nothing of the memory it came from" {
+    var buffer: [256]u8 = undefined;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    @memcpy(buffer[0..5], "title");
+    @memcpy(buffer[5..10], "hello");
+
+    const items = [_]Value{.{
+        .string = buffer[5..10],
+    }};
+    const keys = [_][]const u8{buffer[0..5]};
+    const held = [_]Value{.{
+        .array = &items,
+    }};
+    const copied = try copy(arena_state.allocator(), .{
+        .object = .{
+            .keys = &keys,
+            .values = &held,
+        },
+    });
+
+    @memset(&buffer, 'x');
+
+    try std.testing.expectEqualStrings("title", copied.object.keys[0]);
+    try std.testing.expectEqualStrings("hello", copied.object.values[0].array[0].string);
+    try std.testing.expect(!equal(copied, .null));
 }

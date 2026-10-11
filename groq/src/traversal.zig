@@ -8,6 +8,7 @@ const tree = @import("tree.zig");
 const value_module = @import("value.zig");
 const evaluate_module = @import("evaluate.zig");
 const hints = @import("hints.zig");
+const dataset_module = @import("dataset.zig");
 
 const Index = tree.Index;
 const Step = tree.Step;
@@ -27,30 +28,93 @@ pub fn traversal_of(
     depth: u32,
 ) Error!Value {
     const from_everything = context.query.node(base_index) == .everything;
-    const base: Value = if (from_everything and steps.len > 0 and steps[0] == .filter) blk: {
-        const given = try hints.of(context, steps[0].filter, scope, depth);
-
-        break :blk .{ .array = try context.dataset.candidates(context.arena, given) };
-    } else try evaluate_module.evaluate(context, base_index, scope, depth);
+    const filtered = from_everything and steps.len > 0 and steps[0] == .filter;
+    const base: Value = if (filtered)
+        try filtered_everything(context, steps[0].filter, scope, depth)
+    else
+        try evaluate_module.evaluate(context, base_index, scope, depth);
+    // The dataset applied the filter as it read: the steps go on from after it.
+    const rest = if (filtered) steps[1..] else steps;
     const implicit = switch (context.query.node(base_index)) {
         .everything, .array, .pipe => true,
         else => false,
     };
 
     if (implicit) {
-        const all = try context.arena.alloc(Step, steps.len + 1);
+        const all = try context.arena.alloc(Step, rest.len + 1);
 
         all[0] = .array_postfix;
-        @memcpy(all[1..], steps);
+        @memcpy(all[1..], rest);
 
         return traverse(context, all, base, scope, depth);
     }
 
-    return traverse(context, steps, base, scope, depth);
+    return traverse(context, rest, base, scope, depth);
 }
 
+/// `*[predicate]`: the candidates the predicate's hints allow, each kept or not by the
+/// predicate as the dataset reads it.
+fn filtered_everything(
+    context: *Context,
+    predicate: Index,
+    scope: *const Scope,
+    depth: u32,
+) Error!Value {
+    std.debug.assert(predicate < context.query.nodes.len);
+
+    const given = try hints.of(context, predicate, scope, depth);
+    var filter: Filter = .{
+        .context = context,
+        .predicate = predicate,
+        .scope = scope,
+        .depth = depth,
+    };
+
+    return .{
+        .array = try context.dataset.candidates(context.arena, given, filter.keep()),
+    };
+}
+
+const Filter = struct {
+    context: *Context,
+    predicate: Index,
+    scope: *const Scope,
+    depth: u32,
+
+    fn keep(filter: *Filter) dataset_module.Keep {
+        std.debug.assert(filter.depth < depth_max);
+
+        return .{
+            .context = filter,
+            .keeps = &keeps,
+        };
+    }
+
+    fn keeps(opaque_filter: *anyopaque, document: Value) dataset_module.Error!bool {
+        const filter: *Filter = @ptrCast(@alignCast(opaque_filter));
+        const inner: Scope = .{
+            .this = document,
+            .parent = filter.scope,
+        };
+
+        std.debug.assert(filter.depth < depth_max);
+
+        const matched = try evaluate_module.evaluate(
+            filter.context,
+            filter.predicate,
+            &inner,
+            filter.depth,
+        );
+
+        return matched.is_true();
+    }
+};
+
 /// What a run of steps works on and returns: arrays or plain values.
-const Class = struct { takes_array: bool, gives_array: bool };
+const Class = struct {
+    takes_array: bool,
+    gives_array: bool,
+};
 
 const Mode = enum { join, map, flat_map, inner_map };
 
@@ -72,40 +136,76 @@ fn own_class(step: Step) Class {
     std.debug.assert(step != .element or @abs(step.element) <= 9_000_000_000_000_000);
 
     return switch (step.shape()) {
-        .plain, .projection => .{ .takes_array = false, .gives_array = false },
-        .element => .{ .takes_array = true, .gives_array = false },
-        .array => .{ .takes_array = true, .gives_array = true },
+        .plain, .projection => .{
+            .takes_array = false,
+            .gives_array = false,
+        },
+        .element => .{
+            .takes_array = true,
+            .gives_array = false,
+        },
+        .array => .{
+            .takes_array = true,
+            .gives_array = true,
+        },
     };
 }
 
 /// How a step combines with the run after it (TraversalPlain, TraversalArray,
 /// TraversalArraySource, TraversalArrayTarget), and what the two together are.
-fn combined(first: Step, rest: Class) struct { mode: Mode, class: Class } {
+fn combined(first: Step, rest: Class) struct {
+    mode: Mode,
+    class: Class,
+} {
     std.debug.assert(first != .element or @abs(first.element) <= 9_000_000_000_000_000);
 
     return switch (first.shape()) {
-        .plain => .{ .mode = .join, .class = .{
-            .takes_array = false,
-            .gives_array = rest.gives_array,
-        } },
-        .element => .{ .mode = .join, .class = .{
-            .takes_array = true,
-            .gives_array = rest.gives_array,
-        } },
+        .plain => .{
+            .mode = .join,
+            .class = .{
+                .takes_array = false,
+                .gives_array = rest.gives_array,
+            },
+        },
+        .element => .{
+            .mode = .join,
+            .class = .{
+                .takes_array = true,
+                .gives_array = rest.gives_array,
+            },
+        },
         .array => if (rest.takes_array)
-            .{ .mode = .join, .class = .{ .takes_array = true, .gives_array = rest.gives_array } }
+            .{
+                .mode = .join,
+                .class = .{
+                    .takes_array = true,
+                    .gives_array = rest.gives_array,
+                },
+            }
         else
             .{
                 .mode = if (rest.gives_array) .flat_map else .map,
-                .class = .{ .takes_array = true, .gives_array = true },
+                .class = .{
+                    .takes_array = true,
+                    .gives_array = true,
+                },
             },
         .projection => if (rest.takes_array)
             .{
                 .mode = .inner_map,
-                .class = .{ .takes_array = true, .gives_array = rest.gives_array },
+                .class = .{
+                    .takes_array = true,
+                    .gives_array = rest.gives_array,
+                },
             }
         else
-            .{ .mode = .join, .class = .{ .takes_array = false, .gives_array = rest.gives_array } },
+            .{
+                .mode = .join,
+                .class = .{
+                    .takes_array = false,
+                    .gives_array = rest.gives_array,
+                },
+            },
     };
 }
 
@@ -159,7 +259,9 @@ fn traverse(
                 }
             }
 
-            return .{ .array = items.items };
+            return .{
+                .array = items.items,
+            };
         },
         .inner_map => {
             if (base != .array) {
@@ -172,7 +274,9 @@ fn traverse(
                 each.* = try apply(context, steps[0], item, scope, inner);
             }
 
-            return traverse(context, rest, .{ .array = mapped }, scope, inner);
+            return traverse(context, rest, .{
+                .array = mapped,
+            }, scope, inner);
         },
     }
 }
@@ -191,7 +295,10 @@ fn apply(context: *Context, step: Step, base: Value, scope: *const Scope, depth:
                 return .null;
             }
 
-            const inner: Scope = .{ .this = base, .parent = scope };
+            const inner: Scope = .{
+                .this = base,
+                .parent = scope,
+            };
 
             return evaluate_module.object_of(context, attributes, &inner, depth);
         },
@@ -237,10 +344,14 @@ fn slice_of(base: Value, start_given: i64, end_given: i64, exclusive: bool) Valu
     end = std.math.clamp(end, 0, length);
 
     if (start >= end) {
-        return .{ .array = &.{} };
+        return .{
+            .array = &.{},
+        };
     }
 
-    return .{ .array = base.array[@intCast(start)..@intCast(end)] };
+    return .{
+        .array = base.array[@intCast(start)..@intCast(end)],
+    };
 }
 
 fn filter_of(
@@ -257,7 +368,10 @@ fn filter_of(
     var kept: std.ArrayList(Value) = .empty;
 
     for (base.array) |item| {
-        const inner: Scope = .{ .this = item, .parent = scope };
+        const inner: Scope = .{
+            .this = item,
+            .parent = scope,
+        };
         const matched = try evaluate_module.evaluate(context, predicate, &inner, depth);
 
         if (matched.is_true()) {
@@ -265,7 +379,9 @@ fn filter_of(
         }
     }
 
-    return .{ .array = kept.items };
+    return .{
+        .array = kept.items,
+    };
 }
 
 fn dereference_of(context: *Context, base: Value, name: ?[]const u8) Error!Value {
@@ -284,7 +400,10 @@ fn dereference_of(context: *Context, base: Value, name: ?[]const u8) Error!Value
         .document => |document| document,
         .missing => return .null,
         .unreadable => |reason| {
-            try context.problems.append(context.arena, .{ .id = id, .reason = reason });
+            try context.problems.append(context.arena, .{
+                .id = id,
+                .reason = reason,
+            });
             return .null;
         },
     };

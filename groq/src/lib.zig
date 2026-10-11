@@ -28,6 +28,7 @@ pub const DatasetError = dataset_module.Error;
 pub const Dataset = dataset_module.Dataset;
 pub const Memory = dataset_module.Memory;
 pub const Hint = dataset_module.Hint;
+pub const Keep = dataset_module.Keep;
 pub const Found = dataset_module.Found;
 pub const Problem = syntax.Problem;
 pub const tree = @import("tree.zig");
@@ -37,12 +38,17 @@ pub const Error = error{ Invalid, OutOfMemory, TooDeep, TooMuchWork, DatasetFail
 
 pub const Options = struct {
     params: value_module.Object = .{},
-    now: value_module.Datetime = .{ .seconds = 0 },
+    now: value_module.Datetime = .{
+        .seconds = 0,
+    },
     strings_are_references: bool = false,
     work_steps: u64 = std.math.maxInt(u64),
 };
 
-pub const Answer = struct { value: Value, problems: []const evaluate_module.Problem };
+pub const Answer = struct {
+    value: Value,
+    problems: []const evaluate_module.Problem,
+};
 
 pub fn execute(
     arena: std.mem.Allocator,
@@ -69,7 +75,10 @@ pub fn execute(
 
     const result = try evaluate_module.run(&context);
 
-    return .{ .value = result, .problems = context.problems.items };
+    return .{
+        .value = result,
+        .problems = context.problems.items,
+    };
 }
 
 test {

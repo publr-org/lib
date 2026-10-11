@@ -1,6 +1,6 @@
 //! Where a query's `*` reads from and `->` looks up in. In memory for the conformance suite
 //! and tests; Publr's own reads its records as the caller may read them. A dataset may
-//! answer `candidates` with more than match: the evaluator applies the whole filter after.
+//! answer `candidates` with more than the hints allow, never one `keep` refused.
 
 const std = @import("std");
 const value_module = @import("value.zig");
@@ -9,7 +9,10 @@ const Value = value_module.Value;
 
 /// An attribute that must hold one of these values for a document to match, taken from a
 /// filter's top-level `&&`: `_type == "post"`, `slug == $slug`, `product == ^._id`.
-pub const Hint = struct { attribute: []const u8, values: []const Value };
+pub const Hint = struct {
+    attribute: []const u8,
+    values: []const Value,
+};
 
 pub const Found = union(enum) {
     document: Value,
@@ -19,7 +22,21 @@ pub const Found = union(enum) {
 };
 
 /// `OutOfReach`: the query names what the caller may not read at all.
-pub const Error = error{ OutOfMemory, DatasetFailed, TooMuchWork, OutOfReach };
+pub const Error = error{ OutOfMemory, TooDeep, DatasetFailed, TooMuchWork, OutOfReach };
+
+/// The filter on `*`, asked of each document as it is read: a dataset reading from storage
+/// a page at a time keeps only what it keeps, copied out of the page, and gives the page
+/// back, so a query holds what it matched, never all it read.
+pub const Keep = struct {
+    context: *anyopaque,
+    keeps: *const fn (context: *anyopaque, document: Value) Error!bool,
+
+    pub fn of(keep: Keep, document: Value) Error!bool {
+        std.debug.assert(document != .number or std.math.isFinite(document.number));
+
+        return keep.keeps(keep.context, document);
+    }
+};
 
 pub const Dataset = struct {
     context: *anyopaque,
@@ -31,6 +48,7 @@ pub const Dataset = struct {
             context: *anyopaque,
             arena: std.mem.Allocator,
             hints: []const Hint,
+            keep: ?Keep,
         ) Error![]const Value,
         find: *const fn (context: *anyopaque, arena: std.mem.Allocator, id: []const u8) Error!Found,
     };
@@ -39,12 +57,17 @@ pub const Dataset = struct {
         return dataset.vtable.everything(dataset.context, arena);
     }
 
+    /// The documents the hints allow that `keep` keeps (every one, without it), in the
+    /// dataset's order.
     pub fn candidates(
         dataset: Dataset,
         arena: std.mem.Allocator,
         hints: []const Hint,
+        keep: ?Keep,
     ) Error![]const Value {
-        return dataset.vtable.candidates(dataset.context, arena, hints);
+        std.debug.assert(hints.len <= 64);
+
+        return dataset.vtable.candidates(dataset.context, arena, hints, keep);
     }
 
     pub fn find(dataset: Dataset, arena: std.mem.Allocator, id: []const u8) Error!Found {
@@ -71,7 +94,10 @@ pub const Memory = struct {
     };
 
     pub fn dataset(memory: *Memory) Dataset {
-        return .{ .context = memory, .vtable = &vtable };
+        return .{
+            .context = memory,
+            .vtable = &vtable,
+        };
     }
 
     fn of(context: *anyopaque) *Memory {
@@ -84,13 +110,34 @@ pub const Memory = struct {
         return of(context).documents;
     }
 
-    /// The documents of the smallest hinted bucket, in the dataset's order.
+    /// The documents of the smallest hinted bucket that `keep` keeps, in the dataset's
+    /// order. They are in memory already: kept as they are, not copied.
     fn candidates(
         context: *anyopaque,
         arena: std.mem.Allocator,
         hints: []const Hint,
+        keep: ?Keep,
     ) Error![]const Value {
-        const memory = of(context);
+        const found = try bucketed(of(context), arena, hints);
+        const test_each = keep orelse return found;
+        var kept: std.ArrayList(Value) = .empty;
+
+        for (found) |document| {
+            if (try test_each.of(document)) {
+                try kept.append(arena, document);
+            }
+        }
+
+        return kept.items;
+    }
+
+    fn bucketed(
+        memory: *Memory,
+        arena: std.mem.Allocator,
+        hints: []const Hint,
+    ) Error![]const Value {
+        std.debug.assert(memory.documents.len <= std.math.maxInt(u32));
+
         var best: ?[]const u32 = null;
 
         for (hints) |hint| {
@@ -203,7 +250,9 @@ pub const Memory = struct {
 
         const found = memory.index.?.get(id) orelse return .missing;
 
-        return .{ .document = found };
+        return .{
+            .document = found,
+        };
     }
 };
 
