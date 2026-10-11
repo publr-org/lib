@@ -24,6 +24,7 @@
 const std = @import("std");
 const engine_module = @import("engine.zig");
 const connection = @import("connection.zig");
+const arena_trace = @import("arena_trace.zig");
 const router_module = @import("http/router.zig");
 const request_module = @import("http/request.zig");
 const response_module = @import("http/response.zig");
@@ -37,7 +38,10 @@ pub const Engine = engine_module.Engine;
 /// passes that namespace; the engine-side plumbing is looked up here rather than
 /// read off it, so the namespace carries nothing a handler has no use for.
 const registry = .{
-    .{ .State = websocket_module.State, .vtable = &websocket_module.extension },
+    .{
+        .State = websocket_module.State,
+        .vtable = &websocket_module.extension,
+    },
 };
 
 fn vtable_for(comptime State: type) *const engine_module.Extension {
@@ -209,14 +213,12 @@ pub fn Server(comptime extension_modules: anytype) type {
         ///
         /// Handlers see `ctx.counters` (counting `requests_total`) and
         /// `ctx.options`; there is no connection, so an extension that takes one
-        /// over cannot be used — an offline app has an empty extension set
-        /// (compile error otherwise).
+        /// over never does: a WebSocket upgrade answers false, as for a request that
+        /// is no handshake, and the handler serves its plain-HTTP fallback.
         pub fn offline(options: engine_module.Options) App {
-            comptime if (mod_fields.len != 0) {
-                @compileError("an offline app cannot carry extensions: nothing to upgrade");
+            var app: App = .{
+                .engine = undefined,
             };
-
-            var app: App = .{ .engine = undefined };
 
             app.engine.options = options;
             app.engine.counters = .{};
@@ -237,7 +239,10 @@ pub fn Server(comptime extension_modules: anytype) type {
         pub fn handle(app: *App, arena: std.mem.Allocator, req: *router_module.Request) Response {
             var response = response_module.init(arena);
             // No connection: a streamed route gets the whole body in one piece, at once.
-            var slot: engine_module.Slot = .{ .read_buffer = &.{}, .write_buffer = &.{} };
+            var slot: engine_module.Slot = .{
+                .read_buffer = &.{},
+                .write_buffer = &.{},
+            };
             var ctx: Context = .{
                 .arena = arena,
                 .user_data = app.user_data,
@@ -326,7 +331,11 @@ pub fn Server(comptime extension_modules: anytype) type {
             req.inner = &stripped;
             defer req.inner = original;
 
-            const next: App.Router.Next = .{ .router = &app.routes, .index = 0, .handler = &open_handler };
+            const next: App.Router.Next = .{
+                .router = &app.routes,
+                .index = 0,
+                .handler = &open_handler,
+            };
 
             next.run(req, response, ctx) catch |err| {
                 std.log.scoped(.publr_http).debug("stream open error: {s} -> {t}", .{ req.inner.path, err });
@@ -379,9 +388,17 @@ pub fn Server(comptime extension_modules: anytype) type {
             request: *const request_module.Request,
         ) engine_module.HeadAnswer {
             const app: *App = @fieldParentPtr("engine", engine);
-            var req: router_module.Request = .{ .inner = request, .body = "" };
+            var req: router_module.Request = .{
+                .inner = request,
+                .body = "",
+            };
             const stream = stream_of(app, &req) orelse return .none;
-            var arena_state = std.heap.FixedBufferAllocator.init(engine.arena_buffer);
+            var arena_state = arena_trace.Arena.init(
+                engine.arena_buffer,
+                engine.arena_sites,
+                @tagName(request.method),
+                request.path,
+            );
             const arena = arena_state.allocator();
             var response = response_module.init(arena);
             var ctx = context_for(engine, slot, arena);
@@ -419,7 +436,12 @@ pub fn Server(comptime extension_modules: anytype) type {
         fn stream_end(engine: *Engine, slot: *engine_module.Slot) void {
             const stream: *const App.Router.Stream = @ptrCast(@alignCast(slot.stream.?));
             const state = slot.stream_state.?;
-            var arena_state = std.heap.FixedBufferAllocator.init(engine.arena_buffer);
+            var arena_state = arena_trace.Arena.init(
+                engine.arena_buffer,
+                engine.arena_sites,
+                "stream",
+                "end",
+            );
             const arena = arena_state.allocator();
             var response = response_module.init(arena);
             var ctx = context_for(engine, slot, arena);
@@ -542,9 +564,20 @@ pub fn Server(comptime extension_modules: anytype) type {
         ) void {
             const app: *App = @fieldParentPtr("engine", engine);
 
-            var arena_state = std.heap.FixedBufferAllocator.init(engine.arena_buffer);
+            var arena_state = arena_trace.Arena.init(
+                engine.arena_buffer,
+                engine.arena_sites,
+                @tagName(request.method),
+                request.path,
+            );
             const arena = arena_state.allocator();
             var response = response_module.init(arena);
+
+            // A large body is written where it is sent from, never also in the arena.
+            if (slot.write_buffer.len > response_module.head_room_bytes) {
+                response.body_room = slot.write_buffer[response_module.head_room_bytes..];
+            }
+
             var req: router_module.Request = .{
                 .inner = request,
                 .body = slot.read_buffer[request.head_len..][0..@intCast(request.content_length)],
@@ -697,18 +730,27 @@ test "an offline app routes, fills the context, and turns handler errors into 50
     const arena = arena_state.allocator();
 
     const hello = try request_module.parse("GET /zig HTTP/1.1\r\nHost: h\r\n\r\n");
-    var hello_request: Request = .{ .inner = &hello.complete, .body = "" };
+    var hello_request: Request = .{
+        .inner = &hello.complete,
+        .body = "",
+    };
     const greeted = app.handle(arena, &hello_request);
     try std.testing.expectEqual(Status.ok, greeted.status);
     try std.testing.expectEqualStrings("hello zig", greeted.body);
     try std.testing.expectEqualStrings("text/plain; charset=utf-8", greeted.header("Content-Type").?);
 
     const echo = try request_module.parse("POST /echo HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n");
-    var echo_request: Request = .{ .inner = &echo.complete, .body = "abc" };
+    var echo_request: Request = .{
+        .inner = &echo.complete,
+        .body = "abc",
+    };
     try std.testing.expectEqualStrings("abc", app.handle(arena, &echo_request).body);
 
     const boom = try request_module.parse("GET /boom HTTP/1.1\r\nHost: h\r\n\r\n");
-    var boom_request: Request = .{ .inner = &boom.complete, .body = "" };
+    var boom_request: Request = .{
+        .inner = &boom.complete,
+        .body = "",
+    };
     const failed = app.handle(arena, &boom_request);
     try std.testing.expectEqual(Status.internal_server_error, failed.status);
     try std.testing.expectEqualStrings("Internal Server Error", failed.body);
@@ -736,10 +778,16 @@ test "on_response sees every dispatched request with its final response, the 500
     const arena = arena_state.allocator();
 
     const hello = try request_module.parse("GET /zig HTTP/1.1\r\nHost: h\r\n\r\n");
-    var hello_request: Request = .{ .inner = &hello.complete, .body = "" };
+    var hello_request: Request = .{
+        .inner = &hello.complete,
+        .body = "",
+    };
     _ = app.handle(arena, &hello_request);
     const boom = try request_module.parse("GET /boom HTTP/1.1\r\nHost: h\r\n\r\n");
-    var boom_request: Request = .{ .inner = &boom.complete, .body = "" };
+    var boom_request: Request = .{
+        .inner = &boom.complete,
+        .body = "",
+    };
     _ = app.handle(arena, &boom_request);
 
     try std.testing.expectEqualStrings("get /zig 200\nget /boom 500\n", response_log.lines.items);
@@ -769,7 +817,10 @@ test "under a base path, routes match without it, and nothing outside it is serv
         "GET /_internal HTTP/1.1\r\nHost: h\r\n\r\n",
     }) |raw| {
         var parsed = try request_module.parse(raw);
-        var request: Request = .{ .inner = &parsed.complete, .body = "" };
+        var request: Request = .{
+            .inner = &parsed.complete,
+            .body = "",
+        };
         _ = app.handle(arena, &request);
     }
 
@@ -812,7 +863,10 @@ test "pool exhaustion sheds load with a 503 instead of a silent drop" {
     const port = try app.engine.bound_port();
 
     const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", port);
-    const holder = try address.connect(std.testing.io, .{ .mode = .stream, .protocol = .tcp });
+    const holder = try address.connect(std.testing.io, .{
+        .mode = .stream,
+        .protocol = .tcp,
+    });
     defer holder.close(std.testing.io);
 
     var holder_buffer: [64]u8 = undefined;
@@ -971,7 +1025,10 @@ test "an idle connection is closed once the idle timeout expires" {
     defer app.deinit();
 
     const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", try app.engine.bound_port());
-    const idler = try address.connect(std.testing.io, .{ .mode = .stream, .protocol = .tcp });
+    const idler = try address.connect(std.testing.io, .{
+        .mode = .stream,
+        .protocol = .tcp,
+    });
     defer idler.close(std.testing.io);
 
     try harness.serve_until(&app, 10);
@@ -1070,7 +1127,10 @@ test "a streamed route takes a body far larger than the read buffer, piece by pi
     });
     defer std.testing.allocator.free(request);
 
-    var client: harness.Client = .{ .port = try app.engine.bound_port(), .request = request };
+    var client: harness.Client = .{
+        .port = try app.engine.bound_port(),
+        .request = request,
+    };
     const thread = try std.Thread.spawn(.{}, harness.Client.run, .{&client});
     try harness.serve_until(&app, 200);
     thread.join();
@@ -1154,7 +1214,10 @@ test "an offline app streams a body in one piece" {
     defer arena_state.deinit();
 
     const head = try request_module.parse("POST /upload HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n");
-    var request: Request = .{ .inner = &head.complete, .body = "abc" };
+    var request: Request = .{
+        .inner = &head.complete,
+        .body = "abc",
+    };
     const answered = app.handle(arena_state.allocator(), &request);
 
     try std.testing.expectEqual(Status.created, answered.status);

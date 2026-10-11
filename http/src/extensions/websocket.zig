@@ -198,7 +198,10 @@ pub const State = struct {
         const slot: *Slot = ctx.slot;
         const request = req.inner;
 
-        std.debug.assert(slot.state == .reading);
+        // An offline app's request has no connection to take over.
+        if (slot.state != .reading) {
+            return false;
+        }
 
         if (request.method != .get) {
             return false;
@@ -246,7 +249,10 @@ pub const State = struct {
         }) catch return false;
 
         const index = engine.slot_index(slot);
-        state.entries[index] = .{ .generation = slot.generation, .handlers = handlers };
+        state.entries[index] = .{
+            .generation = slot.generation,
+            .handlers = handlers,
+        };
         slot.owner = engine.extension_index(state);
         slot.upgrading = true;
 
@@ -368,7 +374,11 @@ fn on_upgraded(engine: *Engine, slot: *Slot) void {
     const handlers = state_of(engine, slot).entries[index].handlers orelse unreachable;
 
     if (handlers.on_open) |on_open| {
-        on_open(.{ .server = engine, .index = index, .generation = slot.generation }, handlers.ctx);
+        on_open(.{
+            .server = engine,
+            .index = index,
+            .generation = slot.generation,
+        }, handlers.ctx);
     }
 }
 
@@ -561,7 +571,14 @@ fn parse_frame(buffer: []u8, capacity: usize) FrameError!ParsedFrame {
         byte.* ^= mask_key[i % 4];
     }
 
-    return .{ .frame = .{ .fin = fin, .opcode = opcode, .payload = payload, .frame_len = frame_len } };
+    return .{
+        .frame = .{
+            .fin = fin,
+            .opcode = opcode,
+            .payload = payload,
+            .frame_len = frame_len,
+        },
+    };
 }
 
 fn is_control(opcode: Opcode) bool {
@@ -633,8 +650,15 @@ fn deliver(engine: *Engine, slot: *Slot, binary: bool, payload: []const u8) void
     const handlers = state_of(engine, slot).entries[index].handlers orelse unreachable;
 
     handlers.on_message(
-        .{ .server = engine, .index = index, .generation = slot.generation },
-        .{ .binary = binary, .data = payload },
+        .{
+            .server = engine,
+            .index = index,
+            .generation = slot.generation,
+        },
+        .{
+            .binary = binary,
+            .data = payload,
+        },
         handlers.ctx,
     );
 }
@@ -672,7 +696,11 @@ fn close_connection(engine: *Engine, slot: *Slot) void {
 
     if (entry.handlers) |handlers| {
         if (handlers.on_close) |on_close| {
-            on_close(.{ .server = engine, .index = index, .generation = slot.generation }, handlers.ctx);
+            on_close(.{
+                .server = engine,
+                .index = index,
+                .generation = slot.generation,
+            }, handlers.ctx);
         }
     }
 
@@ -826,9 +854,21 @@ test "encode_header picks the shortest length encoding" {
 
 test "Group add/remove bookkeeping and capacity" {
     var group: Group(2) = .{};
-    const first: Connection = .{ .server = undefined, .index = 0, .generation = 1 };
-    const second: Connection = .{ .server = undefined, .index = 1, .generation = 1 };
-    const third: Connection = .{ .server = undefined, .index = 2, .generation = 1 };
+    const first: Connection = .{
+        .server = undefined,
+        .index = 0,
+        .generation = 1,
+    };
+    const second: Connection = .{
+        .server = undefined,
+        .index = 1,
+        .generation = 1,
+    };
+    const third: Connection = .{
+        .server = undefined,
+        .index = 2,
+        .generation = 1,
+    };
 
     try std.testing.expect(group.add(first));
     try std.testing.expect(group.add(second));
@@ -838,12 +878,18 @@ test "Group add/remove bookkeeping and capacity" {
     try std.testing.expectEqual(@as(u32, 1), group.len);
     try std.testing.expect(group.add(third));
 
-    group.remove(.{ .server = undefined, .index = 9, .generation = 9 });
+    group.remove(.{
+        .server = undefined,
+        .index = 9,
+        .generation = 9,
+    });
     try std.testing.expectEqual(@as(u32, 2), group.len);
 }
 
 const server_app = @import("../server.zig");
-const TestApp = server_app.Server(.{ .websocket = @This() });
+const TestApp = server_app.Server(.{
+    .websocket = @This(),
+});
 const Response = router_module.Response;
 
 const TestClient = struct {
@@ -858,7 +904,10 @@ const TestClient = struct {
 
     fn connect(client: *TestClient, port: u16) !void {
         const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", port);
-        client.stream = try address.connect(std.testing.io, .{ .mode = .stream, .protocol = .tcp });
+        client.stream = try address.connect(std.testing.io, .{
+            .mode = .stream,
+            .protocol = .tcp,
+        });
         client.reader = client.stream.reader(std.testing.io, &client.read_buffer);
         client.writer = client.stream.writer(std.testing.io, &client.write_buffer);
     }
@@ -919,7 +968,10 @@ const TestClient = struct {
     }
 
     /// Reads one server frame (unmasked, per spec) and returns its opcode and payload.
-    fn read_frame(client: *TestClient, out: []u8) !struct { opcode: Opcode, payload: []const u8 } {
+    fn read_frame(client: *TestClient, out: []u8) !struct {
+        opcode: Opcode,
+        payload: []const u8,
+    } {
         const byte0 = try client.reader.interface.takeByte();
         const byte1 = try client.reader.interface.takeByte();
         const opcode: Opcode = @enumFromInt(byte0 & 0x0f);
@@ -935,13 +987,19 @@ const TestClient = struct {
 
         try client.reader.interface.readSliceAll(out[0..payload_len]);
 
-        return .{ .opcode = opcode, .payload = out[0..payload_len] };
+        return .{
+            .opcode = opcode,
+            .payload = out[0..payload_len],
+        };
     }
 };
 
 const harness = @import("../testing.zig");
 
-const EchoCtx = struct { opened: u32 = 0, closed: u32 = 0 };
+const EchoCtx = struct {
+    opened: u32 = 0,
+    closed: u32 = 0,
+};
 
 fn echo_route(req: *router_module.Request, res: *Response, ctx: *TestApp.Context) anyerror!void {
     if (!ctx.extensions.websocket.upgrade(ctx, req, .{

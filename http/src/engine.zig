@@ -22,6 +22,7 @@ const event = @import("platform/event.zig");
 const socket = @import("platform/socket.zig");
 const request_module = @import("http/request.zig");
 const connection = @import("connection.zig");
+const arena_trace = @import("arena_trace.zig");
 
 const connections_limit: u32 = 1 << 18;
 /// After this many requests on one keep-alive connection the engine answers the next
@@ -76,6 +77,9 @@ pub const Options = struct {
     /// Caps one serialized response, headers plus body; sized as each slot's
     /// write buffer. A handler response that does not fit becomes a 500.
     response_bytes_max: u32 = 32 << 10,
+    /// The per-request arena; 0 for twice `response_bytes_max`. One buffer serves every
+    /// slot, as dispatch runs one request at a time.
+    arena_bytes: u32 = 0,
     /// How long a keep-alive connection may sit with no request in progress
     /// before the engine closes it. Counted in `Counters.timed_out_total`.
     idle_timeout_ms: u32 = 15_000,
@@ -124,6 +128,10 @@ const buffer_alignment: std.mem.Alignment = .@"16";
 /// Handler scratch arena: enough to build a response body before serialization, never
 /// less than a fixed floor so small response caps do not starve handlers.
 pub fn arena_bytes(options: *const Options) u32 {
+    if (options.arena_bytes > 0) {
+        return @max(arena_bytes_min, options.arena_bytes);
+    }
+
     return @max(arena_bytes_min, std.math.mul(u32, options.response_bytes_max, 2) catch
         std.math.maxInt(u32));
 }
@@ -372,6 +380,8 @@ pub const Engine = struct {
     /// The per-request scratch arena handed to handlers as `ctx.arena`, reset for
     /// every request. Dispatch is synchronous, so one buffer serves all slots.
     arena_buffer: []u8,
+    /// Where the arena's call sites are counted, in Debug builds (`arena_trace.zig`).
+    arena_sites: arena_trace.Sites,
     /// Indices of free slots, used as a stack: `free_stack[0..free_count]`.
     free_stack: []u32,
     /// Live entries of `free_stack`; `slots.len - free_count` is `active`.
@@ -444,6 +454,9 @@ pub const Engine = struct {
         const arena_buffer = try reserve(gpa, arena_bytes(&options));
         errdefer release(gpa, arena_buffer);
 
+        const arena_sites = try arena_trace.Sites.init(gpa);
+        errdefer arena_sites.deinit(gpa);
+
         const free_stack = gpa.alloc(u32, options.connections_max) catch return error.OutOfMemory;
         errdefer gpa.free(free_stack);
 
@@ -467,7 +480,10 @@ pub const Engine = struct {
 
         for (vtables) |extension| {
             const context = try extension.init(gpa, options.connections_max);
-            registered[registered_len] = .{ .extension = extension, .context = context };
+            registered[registered_len] = .{
+                .extension = extension,
+                .context = context,
+            };
             registered_len += 1;
         }
 
@@ -480,6 +496,7 @@ pub const Engine = struct {
             .read_buffers = read_buffers,
             .write_buffers = write_buffers,
             .arena_buffer = arena_buffer,
+            .arena_sites = arena_sites,
             .free_stack = free_stack,
             .free_count = options.connections_max,
             .next_scan_ms = now_ms() + scan_interval_ms,
@@ -509,6 +526,7 @@ pub const Engine = struct {
 
         server.loop.deinit();
         server.gpa.free(server.free_stack);
+        server.arena_sites.deinit(server.gpa);
         release(server.gpa, server.arena_buffer);
         release(server.gpa, server.write_buffers);
         release(server.gpa, server.read_buffers);

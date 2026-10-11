@@ -22,13 +22,15 @@ const std = @import("std");
 /// The pairs of one parsed body, in arrival order; also home to the two
 /// decoders a handler uses on their own, `query_param` and `decode`.
 pub const Form = struct {
-    /// Most name/value pairs one form may carry; one more and `parse` answers null.
-    pub const pairs_max: u32 = 128;
+    /// Most name/value pairs one form may carry; one more and `parse` answers null. A
+    /// record's form posts one per value it draws, so a long one carries thousands.
+    pub const pairs_max: u32 = 4096;
     /// Largest body `parse` accepts.
     pub const body_bytes_max: u32 = 1 << 20;
 
-    /// The pairs, `pairs[0..len]`, both halves decoded into the arena.
-    pairs: [pairs_max]Pair = undefined,
+    /// The pairs, `pairs[0..len]`, in the arena with both halves decoded: as many as the
+    /// body has, never `pairs_max` up front.
+    pairs: []Pair = &.{},
     /// How many of `pairs` are live.
     len: u32 = 0,
 
@@ -54,7 +56,10 @@ pub const Form = struct {
             return null;
         }
 
-        var form: Form = .{};
+        const count = std.mem.count(u8, body, "&") + 1;
+        var form: Form = .{
+            .pairs = arena.alloc(Pair, @min(count, pairs_max)) catch return null,
+        };
         var pairs = std.mem.splitScalar(u8, body, '&');
 
         while (pairs.next()) |pair| {
@@ -62,7 +67,7 @@ pub const Form = struct {
                 continue;
             }
 
-            if (form.len == pairs_max) {
+            if (form.len == form.pairs.len) {
                 return null;
             }
 

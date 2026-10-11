@@ -72,6 +72,11 @@ pub const Response = struct {
     headers_len: u32 = 0,
     /// The body, borrowed; empty until set.
     body: []const u8 = "",
+    /// Where a handler may write a large body in place: the slot's write buffer past room
+    /// for the head (`head_room_bytes`), so the body is never also held in the arena. A body
+    /// set from here is moved up behind the head as it is written. Empty where there is no
+    /// slot (an offline app): the body goes in the arena then.
+    body_room: []u8 = &.{},
     /// Owned by the connection layer; handlers should not touch it.
     keep_alive: bool = true,
 
@@ -113,7 +118,10 @@ pub const Response = struct {
             return error.TooManyHeaders;
         }
 
-        response.headers[response.headers_len] = .{ .name = name, .value = value };
+        response.headers[response.headers_len] = .{
+            .name = name,
+            .value = value,
+        };
         response.headers_len += 1;
     }
 
@@ -193,10 +201,15 @@ pub const Response = struct {
     }
 };
 
+/// What a response's head may take when its body was written in place (`body_room`).
+pub const head_room_bytes: u32 = 16 << 10;
+
 /// An empty 200 response whose `json` allocates from `arena`. The engine creates
 /// one per request; a handler only ever receives it.
 pub fn init(arena: std.mem.Allocator) Response {
-    return .{ .arena = arena };
+    return .{
+        .arena = arena,
+    };
 }
 
 /// Serializes a response to the wire format: status line, the set headers, then
@@ -212,6 +225,48 @@ pub fn write_to(response: *const Response, writer: *std.Io.Writer, head_only: bo
     std.debug.assert(response.headers_len <= headers_max);
     std.debug.assert(response.body.len <= body_bytes_max);
 
+    const in_place = response.body.len > 0 and within(writer.buffer, response.body);
+
+    if (!in_place) {
+        return write_whole(response, writer, head_only);
+    }
+
+    // The body is in the buffer already, past the room for the head: the head goes first,
+    // then the body moves up behind it, forwards, inside the same buffer.
+    const body_at = @intFromPtr(response.body.ptr) - @intFromPtr(writer.buffer.ptr);
+    var counting: std.Io.Writer.Discarding = .init(&.{});
+
+    write_head(response, &counting.writer, response.body.len) catch return error.WriteFailed;
+
+    if (counting.count + writer.end > body_at) {
+        return error.WriteFailed;
+    }
+
+    try write_head(response, writer, response.body.len);
+
+    if (!head_only and !bodiless(response.status)) {
+        const at = writer.end;
+
+        std.mem.copyForwards(u8, writer.buffer[at .. at + response.body.len], response.body);
+        writer.end += response.body.len;
+    }
+
+    std.debug.assert(writer.end <= writer.buffer.len);
+}
+
+fn within(buffer: []const u8, slice: []const u8) bool {
+    const start = @intFromPtr(buffer.ptr);
+    const at = @intFromPtr(slice.ptr);
+
+    return at >= start and at + slice.len <= start + buffer.len;
+}
+
+fn bodiless(status: Status) bool {
+    return status == .no_content or status == .not_modified;
+}
+
+/// The status line and every header, `Content-Length` for a body of `body_len`.
+fn write_head(response: *const Response, writer: *std.Io.Writer, body_len: usize) Response.Error!void {
     const status = response.status;
 
     writer.print("HTTP/1.1 {d} {s}\r\n", .{ status.code(), status_module.reason(status) }) catch
@@ -222,14 +277,21 @@ pub fn write_to(response: *const Response, writer: *std.Io.Writer, head_only: bo
             return error.WriteFailed;
     }
 
-    const bodiless = status == .no_content or status == .not_modified;
-    const body = if (bodiless) "" else response.body;
+    const length = if (bodiless(status)) 0 else body_len;
 
-    writer.print("X-Content-Type-Options: nosniff\r\nContent-Length: {d}\r\n", .{body.len}) catch
+    writer.print("X-Content-Type-Options: nosniff\r\nContent-Length: {d}\r\n", .{length}) catch
         return error.WriteFailed;
     writer.print("Connection: {s}\r\n\r\n", .{
         if (response.keep_alive) "keep-alive" else "close",
     }) catch return error.WriteFailed;
+}
+
+fn write_whole(response: *const Response, writer: *std.Io.Writer, head_only: bool) Response.Error!void {
+    std.debug.assert(response.headers_len <= headers_max);
+
+    const body = if (bodiless(response.status)) "" else response.body;
+
+    try write_head(response, writer, body.len);
 
     if (!head_only) {
         writer.writeAll(body) catch return error.WriteFailed;
@@ -413,7 +475,10 @@ test "json, redirect, head-only and limits" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = init(arena_state.allocator());
 
-    try response.json(.created, .{ .id = "e_1", .ok = true });
+    try response.json(.created, .{
+        .id = "e_1",
+        .ok = true,
+    });
     try std.testing.expectEqualStrings("{\"id\":\"e_1\",\"ok\":true}", response.body);
     try std.testing.expectEqualStrings("application/json", response.header("content-type").?);
 
@@ -436,4 +501,31 @@ test "json, redirect, head-only and limits" {
     }
 
     try std.testing.expectError(error.TooManyHeaders, many.set_header("one-more", "v"));
+}
+
+test "a body written in place goes out behind its head, from the same buffer" {
+    var buffer: [512]u8 = undefined;
+    const room_at = 256;
+    const body = "<p>in place</p>";
+
+    @memcpy(buffer[room_at .. room_at + body.len], body);
+
+    var response = init(std.testing.allocator);
+    try response.html(.ok, buffer[room_at .. room_at + body.len]);
+
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try write_to(&response, &writer, false);
+
+    const sent = writer.buffered();
+    try std.testing.expect(std.mem.startsWith(u8, sent, "HTTP/1.1 200 OK\r\n"));
+    try std.testing.expect(std.mem.endsWith(u8, sent, "\r\n\r\n<p>in place</p>"));
+    try std.testing.expect(std.mem.indexOf(u8, sent, "Content-Length: 15\r\n") != null);
+
+    // A head past the room it was given would overwrite the body: refused instead.
+    var tight: [256]u8 = undefined;
+    @memcpy(tight[8 .. 8 + body.len], body);
+    var crowded = init(std.testing.allocator);
+    try crowded.html(.ok, tight[8 .. 8 + body.len]);
+    var tight_writer: std.Io.Writer = .fixed(&tight);
+    try std.testing.expectError(error.WriteFailed, write_to(&crowded, &tight_writer, false));
 }
