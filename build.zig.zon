@@ -9,6 +9,7 @@
         .publr_sqlite = .{ .path = "sqlite" },
         .publr_auth = .{ .path = "auth" },
         .publr_groq = .{ .path = "groq" },
+        .publr_ai = .{ .path = "ai" },
     },
     .paths = .{
         "build.zig",

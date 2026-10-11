@@ -17,33 +17,51 @@ pub fn build(b: *std.Build) void {
     // Debug builds on purpose: the libraries pick ReleaseSafe only under
     // `-Drelease`, and a debug `publr-http` binds 127.0.0.1, which is what a
     // local docs server should do.
-    const http_server = b.dependency("http_server", .{ .target = target });
-    const sqlite = b.dependency("publr_sqlite", .{ .target = target });
-    const auth = b.dependency("publr_auth", .{ .target = target });
-    const groq = b.dependency("publr_groq", .{ .target = target });
+    const http_server = b.dependency("http_server", .{
+        .target = target,
+    });
+    const sqlite = b.dependency("publr_sqlite", .{
+        .target = target,
+    });
+    const auth = b.dependency("publr_auth", .{
+        .target = target,
+    });
+    const groq = b.dependency("publr_groq", .{
+        .target = target,
+    });
+    const ai = b.dependency("publr_ai", .{
+        .target = target,
+    });
 
-    const site = tools.hub(b, .{ .packages = &.{
-        .{
-            .name = "publr_http",
-            .description = "A fixed-capacity, single-threaded HTTP/1.1 server, composed at compile time.",
-            .docs = http_server.namedLazyPath("docs"),
+    const site = tools.hub(b, .{
+        .packages = &.{
+            .{
+                .name = "publr_http",
+                .description = "A fixed-capacity, single-threaded HTTP/1.1 server, composed at compile time.",
+                .docs = http_server.namedLazyPath("docs"),
+            },
+            .{
+                .name = "publr_sqlite",
+                .description = "SQLite, fully self-contained, behind a deliberately thin binding.",
+                .docs = sqlite.namedLazyPath("docs"),
+            },
+            .{
+                .name = "publr_auth",
+                .description = "Password hashing, sign-in throttling and CSRF tokens, allocating only at startup.",
+                .docs = auth.namedLazyPath("docs"),
+            },
+            .{
+                .name = "publr_groq",
+                .description = "GROQ, the query language, from text to value over any dataset.",
+                .docs = groq.namedLazyPath("docs"),
+            },
+            .{
+                .name = "publr_ai",
+                .description = "Messages, tools and providers for language models, and the loop that runs a turn.",
+                .docs = ai.namedLazyPath("docs"),
+            },
         },
-        .{
-            .name = "publr_sqlite",
-            .description = "SQLite, fully self-contained, behind a deliberately thin binding.",
-            .docs = sqlite.namedLazyPath("docs"),
-        },
-        .{
-            .name = "publr_auth",
-            .description = "Password hashing, sign-in throttling and CSRF tokens, allocating only at startup.",
-            .docs = auth.namedLazyPath("docs"),
-        },
-        .{
-            .name = "publr_groq",
-            .description = "GROQ, the query language, from text to value over any dataset.",
-            .docs = groq.namedLazyPath("docs"),
-        },
-    } });
+    });
 
     // The site is static files, and the workspace has a static file server:
     // serve the docs with it. The response cap is raised because a reference's

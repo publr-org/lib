@@ -6,6 +6,7 @@ surface already fixed by something outside us: a wire protocol, a C ABI, a
 crypto primitive. Anything that owns a noun stays in the application.
 
 ```
+ai/       publr_ai      messages, tools and providers for language models; the loop that runs a turn
 auth/     publr_auth    argon2id hashing, login throttling, CSRF, origin checks
 deps/     publr_deps    a dependency index for build artifacts, in your SQLite database
 groq/     publr_groq    GROQ, the query language (GROQ-1.revision5), over any dataset
