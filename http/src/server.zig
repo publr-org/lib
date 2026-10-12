@@ -271,21 +271,20 @@ pub fn Server(comptime extension_modules: anytype) type {
                 return null;
             }
 
+            // Kept before `within_base`, which points the request at the stripped copy: the
+            // request leaves with its own head, never this frame's.
+            const original = req.inner;
+            defer req.inner = original;
+
             var stripped: request_module.Request = req.inner.*;
 
             if (!within_base(app.path_base, req, &stripped)) {
                 return null;
             }
 
-            const original = req.inner;
-            req.inner = &stripped;
-            defer req.inner = original;
+            std.debug.assert(app.path_base.len == 0 or req.inner == &stripped);
 
-            const found = app.routes.resolve_stream(req) orelse return null;
-
-            req.inner = original;
-
-            return found;
+            return app.routes.resolve_stream(req);
         }
 
         /// An offline streamed request: open, the body in one piece, finish.
@@ -796,6 +795,8 @@ test "on_response sees every dispatched request with its final response, the 500
 test "under a base path, routes match without it, and nothing outside it is served" {
     var app = TestApp.offline(.{});
     app.router().get("/:name", &testing_routes.hello);
+    // A streamed route looked for first must leave the request as it found it.
+    app.router().stream(.post, "/upload", &tally_stream.handlers);
     app.path_base = "/environments/dev";
     app.on_response = &response_log.record;
     response_log.lines = .empty;
