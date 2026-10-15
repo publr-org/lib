@@ -90,6 +90,8 @@ pub const Description = struct {
     /// Whether its models look at pictures. One that does not, a provider written before
     /// pictures were, is sent a line in each one's place.
     pictures: bool = false,
+    /// Whether it turns speech into text, through `<plugin>.transcribe`.
+    speech: bool = false,
 
     pub fn valid(description: providers.Description) bool {
         std.debug.assert(description.id.len <= 64);
