@@ -140,10 +140,10 @@ libraries, each reference under `<name>/`. The workspace's root `build.zig` is
 the whole of it:
 
 ```zig
-const site = tools.hub(b, .{ .packages = &.{
+const site = tools.hub(b, &.{
     .{ .name = "publr_http", .description = "…", .docs = http_server.namedLazyPath("docs") },
     .{ .name = "publr_sqlite", .description = "…", .docs = sqlite.namedLazyPath("docs") },
-} });
+}, .{});
 ```
 
 `hub` installs the site on `zig build docs` and returns its directory, so the

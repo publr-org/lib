@@ -152,9 +152,7 @@ test "a turn runs the calls the model asks for and ends with its words" {
     var recorder: Recorder = .{};
     var echo: Echo = .{};
 
-    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
-    });
+    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), &asked, .{});
 
     try std.testing.expectEqual(loop.End.finished, outcome.end);
     try std.testing.expectEqualStrings("Built.", outcome.text);
@@ -190,9 +188,7 @@ test "a reply cut off at the length limit is carried on from, its partial call d
     var recorder: Recorder = .{};
     var echo: Echo = .{};
 
-    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
-    });
+    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), &asked, .{});
 
     try std.testing.expectEqual(loop.End.finished, outcome.end);
     try std.testing.expectEqual(@as(u32, 0), recorder.ran);
@@ -227,8 +223,7 @@ test "a tool's pictures follow its result, trimmed to half all at once when too 
     var recorder: Recorder = .{};
     var echo: Echo = .{};
 
-    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
+    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), &asked, .{
         .images_max = 2,
     });
 
@@ -276,8 +271,7 @@ test "a provider that takes no pictures is sent a line in each one's place" {
     var recorder: Recorder = .{};
     var echo: Echo = .{};
 
-    _ = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
+    _ = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), &asked, .{
         .images_max = 0,
     });
 
@@ -310,9 +304,7 @@ test "a turn pauses for the person once a step's calls are answered" {
     var recorder: Recorder = .{};
     var echo: Echo = .{};
 
-    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
-    });
+    const outcome = try loop.run(arena_state.allocator(), scripted.provider(), echo.tools(), recorder.observer(), &asked, .{});
 
     try std.testing.expectEqual(loop.End.paused, outcome.end);
     // Both calls of the step ran; the model was not asked again.
@@ -337,9 +329,7 @@ test "a turn is stopped between steps, and bounded by its steps" {
     var stopper: Recorder = .{
         .stop_after = 1,
     };
-    const stopped = try loop.run(arena, stopping.provider(), echo.tools(), stopper.observer(), .{
-        .messages = &asked,
-    });
+    const stopped = try loop.run(arena, stopping.provider(), echo.tools(), stopper.observer(), &asked, .{});
     try std.testing.expectEqual(loop.End.stopped, stopped.end);
     try std.testing.expectEqual(@as(u32, 1), stopping.answered);
 
@@ -347,8 +337,7 @@ test "a turn is stopped between steps, and bounded by its steps" {
         .responses = &.{ again, again, again },
     };
     var recorder: Recorder = .{};
-    const bounded = try loop.run(arena, looping.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
+    const bounded = try loop.run(arena, looping.provider(), echo.tools(), recorder.observer(), &asked, .{
         .steps_max = 2,
     });
     try std.testing.expectEqual(loop.End.steps_exhausted, bounded.end);
@@ -356,7 +345,5 @@ test "a turn is stopped between steps, and bounded by its steps" {
     var empty: scripts.Scripted = .{
         .responses = &.{},
     };
-    try std.testing.expectError(error.Unavailable, loop.run(arena, empty.provider(), echo.tools(), recorder.observer(), .{
-        .messages = &asked,
-    }));
+    try std.testing.expectError(error.Unavailable, loop.run(arena, empty.provider(), echo.tools(), recorder.observer(), &asked, .{}));
 }

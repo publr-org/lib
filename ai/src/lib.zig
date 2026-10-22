@@ -29,9 +29,12 @@
 //! reached. The observer hears each step as it lands.
 //!
 //! ```zig
-//! const outcome = try ai.run(arena, provider, tools, observer, .{
+//! const asked: []const ai.Message = &.{.{
+//!     .role = .user,
+//!     .parts = &.{ai.Part.of_text(prompt)},
+//! }};
+//! const outcome = try ai.run(arena, provider, tools, observer, asked, .{
 //!     .system = "You build websites.",
-//!     .messages = &.{.{ .role = .user, .parts = &.{ai.Part.of_text(prompt)} }},
 //! });
 //! ```
 //!

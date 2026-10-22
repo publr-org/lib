@@ -45,8 +45,6 @@ pub const Observer = struct {
 pub const Options = struct {
     model: []const u8 = "",
     system: []const u8 = "",
-    /// The conversation so far, ending with the person's new message.
-    messages: []const message.Message,
     /// Model calls in one turn, at most.
     steps_max: u32 = 32,
     output_tokens_max: u32 = 4096,
@@ -73,19 +71,21 @@ pub const Outcome = struct {
 };
 
 /// Runs one turn: asks the model, runs the calls it makes, hands back their answers, and
-/// asks again, until it stops asking or a bound is reached.
+/// asks again, until it stops asking or a bound is reached. `asked` is the conversation so
+/// far, ending with the person's new message.
 pub fn run(
     arena: std.mem.Allocator,
     provider: interface.Provider,
     tools: turn.Tools,
     observer: turn.Observer,
+    asked: []const message.Message,
     options: turn.Options,
 ) !turn.Outcome {
-    std.debug.assert(options.messages.len > 0);
+    std.debug.assert(asked.len > 0);
     std.debug.assert(options.steps_max > 0);
 
     var messages: std.ArrayList(message.Message) = .empty;
-    try messages.appendSlice(arena, options.messages);
+    try messages.appendSlice(arena, asked);
     var usage: message.Usage = .{};
     var text: []const u8 = "";
     var steps: u32 = 0;

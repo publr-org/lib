@@ -197,7 +197,6 @@ pub const HubPackage = struct {
 
 pub const HubOptions = struct {
     title: []const u8 = "Publr",
-    packages: []const HubPackage,
     step_name: []const u8 = "docs",
     step_description: []const u8 = "Build the docs of every package into one site in zig-out/docs",
     /// Install directory, relative to the install prefix.
@@ -207,12 +206,12 @@ pub const HubOptions = struct {
 /// One site for a workspace: a home page listing every package, each package's
 /// reference under `<name>/`. Installs on the `docs` step and returns the site
 /// directory, so the caller can also serve it straight from the cache.
-pub fn hub(b: *std.Build, options: HubOptions) std.Build.LazyPath {
+pub fn hub(b: *std.Build, packages: []const HubPackage, options: HubOptions) std.Build.LazyPath {
     const site = b.addWriteFiles();
 
     var cards = std.ArrayList(u8).empty;
     var manifest = std.ArrayList(u8).empty;
-    for (options.packages, 0..) |package, index| {
+    for (packages, 0..) |package, index| {
         cards.appendSlice(b.allocator, b.fmt(
             \\      <a class="card" href="./{s}/">
             \\        <span class="name">{s}</span>

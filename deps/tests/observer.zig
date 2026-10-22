@@ -54,7 +54,7 @@ const Recorder = struct {
     }
 };
 
-fn watched(world: *helper.World, options: deps.Options, recorder: *Recorder) !void {
+fn watched(world: *helper.World, recorder: *Recorder, options: deps.Options) !void {
     try world.open(options);
     recorder.arena = world.arena_state.allocator();
     world.index.options.observer = recorder.observer();
@@ -83,9 +83,9 @@ test "8.2 what changed, coalescing visible" {
         .arena = undefined,
     };
     var world: helper.World = undefined;
-    try watched(&world, .{
+    try watched(&world, &recorder, .{
         .quiet_ms = 1000,
-    }, &recorder);
+    });
     defer world.close();
     for (0..3) |_| try world.index.invalidate(&.{"entry:1"}, 0);
     try expect_lines(&recorder, &.{
@@ -100,9 +100,9 @@ test "8.3 + 8.4 the resolved graph, the plan, the execution" {
         .arena = undefined,
     };
     var world: helper.World = undefined;
-    try watched(&world, .{
+    try watched(&world, &recorder, .{
         .quiet_ms = 1000,
-    }, &recorder);
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/b", &.{ "entry:1", "entry:2" });
@@ -131,10 +131,10 @@ test "8.5 a refusal is an event, and no execution follows" {
         .arena = undefined,
     };
     var world: helper.World = undefined;
-    try watched(&world, .{
+    try watched(&world, &recorder, .{
         .quiet_ms = 1000,
         .fanout_max = 1,
-    }, &recorder);
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/b", &.{"entry:1"});
@@ -154,10 +154,10 @@ test "8.6 batches are distinguishable and never interleave" {
         .arena = undefined,
     };
     var world: helper.World = undefined;
-    try watched(&world, .{
+    try watched(&world, &recorder, .{
         .quiet_ms = 60_000,
         .queue_cap = 2,
-    }, &recorder);
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.record("/c", &.{"entry:3"});
@@ -188,9 +188,9 @@ test "8.7 the observer sees what the API would say" {
         .arena = undefined,
     };
     var world: helper.World = undefined;
-    try watched(&world, .{
+    try watched(&world, &recorder, .{
         .quiet_ms = 1000,
-    }, &recorder);
+    });
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
     try world.index.invalidate(&.{"entry:1"}, 0);
