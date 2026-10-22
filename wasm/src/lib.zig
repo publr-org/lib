@@ -7,26 +7,31 @@
 //! const wasm = @import("publr_wasm");
 //!
 //! var runtime: wasm.Runtime = undefined;
-//! try runtime.init(.{ .heap = heap, .imports = &.{.{
+//! try runtime.init(heap, &.{.{
 //!     .name = "host_log",
 //!     .signature = "(ii)",
 //!     .function = &host_log,
-//! }} });
+//! }}, .{});
 //! defer runtime.deinit();
 //!
 //! var problem: wasm.Problem = .{};
 //! var module = try wasm.Module.load(&runtime, bytes, &problem);
 //! defer module.unload();
 //!
-//! var instance = try wasm.Instance.init(&module, .{ .memory_pages_max = 256 }, &problem);
+//! var instance = try wasm.Instance.init(&module, 256, &problem, .{});
 //! defer instance.deinit();
 //!
-//! const answer = try instance.call("run", &.{ 1, 2 }, .{ .instructions_max = 1_000_000 }, &problem);
+//! const answer = try instance.call("run", &.{ 1, 2 }, 1_000_000, &problem, .{});
 //! ```
 //!
 //! Threading: none. WAMR's runtime is process-global, so there is one `Runtime` per process,
 //! and an instance is only ever called from the thread that created it.
+//!
+//! Built for `wasm32` (Publr in the browser), the same API runs each module on the browser's
+//! own WebAssembly through the host page's functions (`browser.zig`); there an instruction
+//! budget is not kept, and a memory ceiling is checked after each call.
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const section = @import("section.zig");
 
@@ -39,10 +44,16 @@ pub const page_bytes: u32 = 64 << 10;
 
 const abi = @import("abi.zig");
 const instance = @import("instance.zig");
+const browser = @import("browser.zig");
+
+/// Whether this build runs modules on the browser's WebAssembly rather than WAMR.
+pub const in_browser = builtin.cpu.arch == .wasm32;
 
 /// What a host function receives first: the calling instance's execution environment.
-pub const Env = instance.Env;
-pub const Instance = instance.Instance;
+pub const Env = if (in_browser) browser.Env else instance.Env;
+pub const Instance = if (in_browser) browser.Instance else instance.Instance;
+pub const Runtime = if (in_browser) browser.Runtime else NativeRuntime;
+pub const Module = if (in_browser) browser.Module else NativeModule;
 
 pub const Error = error{
     /// The bytes are not a module WAMR accepts, or they import what the host does not give.
@@ -98,20 +109,23 @@ pub const Import = struct {
 /// on `deinit`, every allocation WAMR makes for itself carved from `heap` (linear memories
 /// are mapped apart, each held to its instance's ceiling). It also holds the host functions,
 /// which WAMR sorts in place and keeps for the runtime's life.
-pub const Runtime = struct {
+pub const NativeRuntime = struct {
     natives: [imports_max]abi.NativeSymbol,
 
     pub const Options = struct {
-        heap: []u8,
         module_name: [:0]const u8 = "env",
-        imports: []const Import,
     };
 
-    pub fn init(runtime: *Runtime, options: Options) Error!void {
-        std.debug.assert(options.heap.len >= heap_bytes_min);
-        std.debug.assert(options.imports.len <= imports_max);
+    pub fn init(
+        runtime: *NativeRuntime,
+        heap: []u8,
+        imports: []const Import,
+        options: Options,
+    ) Error!void {
+        std.debug.assert(heap.len >= heap_bytes_min);
+        std.debug.assert(imports.len <= imports_max);
 
-        for (options.imports, 0..) |import, index| {
+        for (imports, 0..) |import, index| {
             runtime.natives[index] = .{
                 .symbol = import.name.ptr,
                 .function = import.function,
@@ -125,13 +139,13 @@ pub const Runtime = struct {
         args.mem_alloc_type = abi.alloc_with_pool;
         args.mem_alloc_option = .{
             .pool = .{
-                .heap_buf = options.heap.ptr,
-                .heap_size = @intCast(@min(options.heap.len, std.math.maxInt(u32))),
+                .heap_buf = heap.ptr,
+                .heap_size = @intCast(@min(heap.len, std.math.maxInt(u32))),
             },
         };
         args.native_module_name = options.module_name.ptr;
         args.native_symbols = &runtime.natives;
-        args.n_native_symbols = @intCast(options.imports.len);
+        args.n_native_symbols = @intCast(imports.len);
         args.running_mode = abi.running_mode_interp;
 
         if (!abi.wasm_runtime_full_init(&args)) {
@@ -143,19 +157,19 @@ pub const Runtime = struct {
         abi.wasm_runtime_set_log_level(abi.log_level_fatal);
     }
 
-    pub fn deinit(runtime: *Runtime) void {
+    pub fn deinit(runtime: *NativeRuntime) void {
         std.debug.assert(runtime.natives.len == imports_max);
         abi.wasm_runtime_destroy();
     }
 };
 
-pub const Module = struct {
+pub const NativeModule = struct {
     handle: *abi.ModuleHandle,
 
     /// Validates and loads `bytes`, which must outlive the module: WAMR keeps pointers into
     /// them. Imports are resolved here, so a module asking for a host function the runtime
     /// does not give fails now, not at its first call.
-    pub fn load(runtime: *Runtime, bytes: []u8, problem: *Problem) Error!Module {
+    pub fn load(runtime: *NativeRuntime, bytes: []u8, problem: *Problem) Error!NativeModule {
         std.debug.assert(bytes.len > 0);
         std.debug.assert(runtime.natives.len == imports_max);
 
@@ -175,7 +189,7 @@ pub const Module = struct {
         };
     }
 
-    pub fn unload(module: *Module) void {
+    pub fn unload(module: *NativeModule) void {
         std.debug.assert(@intFromPtr(module.handle) != 0);
         abi.wasm_runtime_unload(module.handle);
     }

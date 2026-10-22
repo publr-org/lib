@@ -61,16 +61,16 @@ const Fixture = struct {
         fixture.bytes = try std.testing.allocator.dupe(u8, guest_bytes);
         errdefer std.testing.allocator.free(fixture.bytes);
 
-        try fixture.runtime.init(.{
-            .heap = fixture.heap,
-            .imports = &imports,
-        });
+        try fixture.runtime.init(fixture.heap, &imports, .{});
         errdefer fixture.runtime.deinit();
         fixture.module = try wasm.Module.load(&fixture.runtime, fixture.bytes, &fixture.problem);
         errdefer fixture.module.unload();
-        fixture.instance = try wasm.Instance.init(&fixture.module, .{
-            .memory_pages_max = ceiling_pages,
-        }, &fixture.problem);
+        fixture.instance = try wasm.Instance.init(
+            &fixture.module,
+            ceiling_pages,
+            &fixture.problem,
+            .{},
+        );
     }
 
     fn deinit(fixture: *Fixture) void {
@@ -82,9 +82,7 @@ const Fixture = struct {
     }
 
     fn call(fixture: *Fixture, name: [:0]const u8, params: []const u32) wasm.Error!u32 {
-        return fixture.instance.call(name, params, .{
-            .instructions_max = 1_000_000,
-        }, &fixture.problem);
+        return fixture.instance.call(name, params, 1_000_000, &fixture.problem, .{});
     }
 };
 
@@ -104,10 +102,9 @@ test "a host function reads the guest's memory and finds the call's user data" {
     defer fixture.deinit();
 
     var seen: Seen = .{};
-    const len = try fixture.instance.call("echo", &.{}, .{
-        .instructions_max = 1_000_000,
+    const len = try fixture.instance.call("echo", &.{}, 1_000_000, &fixture.problem, .{
         .user_data = &seen,
-    }, &fixture.problem);
+    });
 
     try std.testing.expectEqual(@as(u32, 20), len);
     try std.testing.expectEqualStrings("hello from the guest", seen.text[0..seen.len]);
@@ -171,10 +168,7 @@ test "bytes that are not a module are refused with a reason" {
     defer std.testing.allocator.free(heap);
 
     var runtime: wasm.Runtime = undefined;
-    try runtime.init(.{
-        .heap = heap,
-        .imports = &imports,
-    });
+    try runtime.init(heap, &imports, .{});
     defer runtime.deinit();
 
     var junk = "\x00asm\x01\x00\x00\x00\x01\xff".*;

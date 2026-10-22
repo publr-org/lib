@@ -6,7 +6,7 @@ const lib = @import("lib.zig");
 
 const Error = lib.Error;
 const Problem = lib.Problem;
-const Module = lib.Module;
+const Module = lib.NativeModule;
 const params_max = lib.params_max;
 const problem_len_max = lib.problem_len_max;
 const page_bytes = lib.page_bytes;
@@ -31,6 +31,32 @@ pub const Env = opaque {
         return memory_slice(handle, offset, len);
     }
 
+    /// Copies `target.len` bytes of the caller's memory at `offset` into `target`; false when
+    /// any of it is outside. The same in every backend, where `bytes` is not: in the browser
+    /// a guest's memory is not the host's.
+    pub fn read(env: *Env, offset: u32, target: []u8) bool {
+        std.debug.assert(@intFromPtr(env) != 0);
+        std.debug.assert(target.len <= std.math.maxInt(u32));
+
+        const source = env.bytes(offset, @intCast(target.len)) orelse return false;
+
+        @memcpy(target, source);
+
+        return true;
+    }
+
+    /// Copies `source` into the caller's memory at `offset`; false when any of it is outside.
+    pub fn write(env: *Env, offset: u32, source: []const u8) bool {
+        std.debug.assert(@intFromPtr(env) != 0);
+        std.debug.assert(source.len <= std.math.maxInt(u32));
+
+        const target = env.bytes(offset, @intCast(source.len)) orelse return false;
+
+        @memcpy(target, source);
+
+        return true;
+    }
+
     /// Calls another export of the same instance from inside a host function, within the
     /// budget the outer call was given.
     pub fn call(
@@ -51,21 +77,23 @@ pub const Instance = struct {
     env: *Env,
 
     pub const Options = struct {
-        /// The ceiling on the instance's linear memory, in 64 KiB pages.
-        memory_pages_max: u32,
         /// The interpreter's operand and frame stack.
         stack_bytes: u32 = 64 << 10,
     };
 
     pub const CallOptions = struct {
-        /// How many instructions the call may execute before it stops as `Exhausted`.
-        instructions_max: u31,
         /// What `Env.user_data` answers inside host functions during this call.
         user_data: ?*anyopaque = null,
     };
 
-    pub fn init(module: *const Module, options: Options, problem: *Problem) Error!Instance {
-        std.debug.assert(options.memory_pages_max > 0);
+    /// `memory_pages_max` is the ceiling on the instance's linear memory, in 64 KiB pages.
+    pub fn init(
+        module: *const Module,
+        memory_pages_max: u32,
+        problem: *Problem,
+        options: Options,
+    ) Error!Instance {
+        std.debug.assert(memory_pages_max > 0);
         std.debug.assert(options.stack_bytes >= 4096);
 
         var args: ?*abi.ArgsHandle = null;
@@ -77,7 +105,7 @@ pub const Instance = struct {
         defer abi.wasm_runtime_instantiation_args_destroy(args.?);
 
         abi.wasm_runtime_instantiation_args_set_default_stack_size(args.?, options.stack_bytes);
-        abi.wasm_runtime_instantiation_args_set_max_memory_pages(args.?, options.memory_pages_max);
+        abi.wasm_runtime_instantiation_args_set_max_memory_pages(args.?, memory_pages_max);
 
         var error_buffer: [problem_len_max]u8 = undefined;
         const handle = abi.wasm_runtime_instantiate_ex2(
@@ -92,7 +120,7 @@ pub const Instance = struct {
         errdefer abi.wasm_runtime_deinstantiate(handle);
 
         // WAMR quietly raises a ceiling below the module's own initial memory to meet it.
-        if (pages_of(handle) > options.memory_pages_max) {
+        if (pages_of(handle) > memory_pages_max) {
             problem.set("the module's initial memory is over the instance's ceiling");
             return error.Instantiate;
         }
@@ -118,21 +146,34 @@ pub const Instance = struct {
 
     /// Calls the export `name` with i32 parameters and answers its i32 result (0 for none).
     /// A trap leaves the instance's memory in whatever state the guest left it: a host that
-    /// cannot trust that discards the instance.
+    /// cannot trust that discards the instance. `instructions_max` is how many instructions
+    /// the call may execute before it stops as `Exhausted`.
     pub fn call(
         instance: *Instance,
         name: [:0]const u8,
         params: []const u32,
-        options: CallOptions,
+        instructions_max: u31,
         problem: *Problem,
+        options: CallOptions,
     ) Error!u32 {
         std.debug.assert(name.len > 0);
-        std.debug.assert(options.instructions_max > 0);
+        std.debug.assert(instructions_max > 0);
+
+        // A call made while the guest is inside one of its own host calls (a plugin's write
+        // that runs its own hook) nests: it counts against the outer call's instructions,
+        // and the outer call's data comes back when it returns.
+        const outer = abi.wasm_runtime_get_user_data(instance.env);
 
         abi.wasm_runtime_set_user_data(instance.env, options.user_data);
-        abi.wasm_runtime_set_instruction_count_limit(instance.env, options.instructions_max);
-        defer abi.wasm_runtime_set_user_data(instance.env, null);
-        defer abi.wasm_runtime_set_instruction_count_limit(instance.env, -1);
+        defer abi.wasm_runtime_set_user_data(instance.env, outer);
+
+        if (outer == null) {
+            abi.wasm_runtime_set_instruction_count_limit(instance.env, instructions_max);
+        }
+
+        defer if (outer == null) {
+            abi.wasm_runtime_set_instruction_count_limit(instance.env, -1);
+        };
 
         return invoke(instance.env, instance.handle, name, params, problem);
     }
@@ -141,6 +182,30 @@ pub const Instance = struct {
         std.debug.assert(@intFromPtr(instance.handle) != 0);
 
         return memory_slice(instance.handle, offset, len);
+    }
+
+    /// As `Env.read`, outside a call.
+    pub fn read(instance: *Instance, offset: u32, target: []u8) bool {
+        std.debug.assert(@intFromPtr(instance.handle) != 0);
+        std.debug.assert(target.len <= std.math.maxInt(u32));
+
+        const source = memory_slice(instance.handle, offset, @intCast(target.len)) orelse return false;
+
+        @memcpy(target, source);
+
+        return true;
+    }
+
+    /// As `Env.write`, outside a call.
+    pub fn write(instance: *Instance, offset: u32, source: []const u8) bool {
+        std.debug.assert(@intFromPtr(instance.handle) != 0);
+        std.debug.assert(source.len <= std.math.maxInt(u32));
+
+        const target = memory_slice(instance.handle, offset, @intCast(source.len)) orelse return false;
+
+        @memcpy(target, source);
+
+        return true;
     }
 };
 

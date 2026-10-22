@@ -9,21 +9,21 @@ Consumers import the module; the interpreter rides along.
 const wasm = @import("publr_wasm");
 
 var runtime: wasm.Runtime = undefined;
-try runtime.init(.{ .heap = heap, .imports = &.{.{
+try runtime.init(heap, &.{.{
     .name = "host_log",
     .signature = "(ii)",
     .function = &host_log,
-}} });
+}}, .{});
 defer runtime.deinit();
 
 var problem: wasm.Problem = .{};
 var module = try wasm.Module.load(&runtime, bytes, &problem);
 defer module.unload();
 
-var instance = try wasm.Instance.init(&module, .{ .memory_pages_max = 256 }, &problem);
+var instance = try wasm.Instance.init(&module, 256, &problem, .{});
 defer instance.deinit();
 
-const sum = try instance.call("add", &.{ 40, 2 }, .{ .instructions_max = 1_000_000 }, &problem);
+const sum = try instance.call("add", &.{ 40, 2 }, 1_000_000, &problem, .{});
 ```
 
 ## The contract
@@ -40,8 +40,9 @@ instructions and stops as `error.Exhausted` past them. Bounds are checked in sof
 no signal handler is installed in the host.
 
 **Guest pointers are never trusted.** A host function receives the calling instance's
-`*Env` first; `Env.bytes(offset, len)` answers the guest's memory or null when any of it
-is outside. `Env.call` calls another export from inside a host function, within the same
+`*Env` first; `Env.read(offset, target)` and `Env.write(offset, source)` copy between the
+guest's memory and the host's, false when any of it is outside (`Instance.read`/`write`
+outside a call). `Env.bytes(offset, len)` answers the guest's memory itself, natively only. `Env.call` calls another export from inside a host function, within the same
 budget. `Env.user_data` answers what the host passed to `Instance.call`.
 
 **A handful of errors.** `Load` (not a module, or it imports what the host does not
@@ -57,6 +58,12 @@ the files the interpreter needs, as released (Apache-2.0 WITH LLVM-exception,
 `vendor/wamr/LICENSE`). It is compiled with the fast interpreter only: no AOT, no JIT,
 no WASI, no threads; reference types and bulk memory, which toolchains emit by default;
 instruction metering; software bounds checks. macOS and Linux, on aarch64 and x86_64.
+
+**In the browser.** Built for `wasm32` (a host that is itself WebAssembly in a page), the
+same API runs each module on the browser's WebAssembly through the page's functions in
+the import module `publr_wasm` (`src/browser.zig`); guests call back through the export
+`publr_wasm_host`. WAMR is not compiled in. There is no instruction budget, the memory
+ceiling is checked after each call, and `bytes` does not exist.
 
 ## Tests
 

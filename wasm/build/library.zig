@@ -3,21 +3,25 @@ const std = @import("std");
 const root = "vendor/wamr/core/";
 
 /// The vendored WAMR interpreter compiled into the module itself, so a consumer importing
-/// `publr_wasm` gets a self-contained binary.
+/// `publr_wasm` gets a self-contained binary. Built for the browser (`wasm32`), the module
+/// carries no interpreter: the browser's own runs the modules (`src/browser.zig`).
 pub fn build(b: *std.Build) *std.Build.Module {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{
         .preferred_optimize_mode = .ReleaseSafe,
     });
 
+    const in_browser = target.result.cpu.arch == .wasm32;
     const library = b.addModule("publr_wasm", .{
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
+        .link_libc = !in_browser,
     });
 
-    add_runtime(b, library, target.result);
+    if (!in_browser) {
+        add_runtime(b, library, target.result);
+    }
 
     return library;
 }
