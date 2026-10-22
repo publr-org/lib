@@ -176,7 +176,7 @@ pub fn Server(comptime extension_modules: anytype) type {
         /// nothing is left allocated.
         pub fn init(gpa: std.mem.Allocator, options: engine_module.Options) Error!App {
             var app: App = .{
-                .engine = try Engine.init(gpa, options, &vtables, &on_request),
+                .engine = try Engine.init(gpa, &vtables, &on_request, options),
             };
 
             app.engine.stream_hooks = &stream_hooks;
@@ -477,7 +477,7 @@ pub fn Server(comptime extension_modules: anytype) type {
             response.keep_alive = keep_alive;
 
             var writer: std.Io.Writer = .fixed(slot.write_buffer);
-            response_module.write_to(response, &writer, false) catch {
+            response_module.write_to(response, &writer, .{}) catch {
                 connection.respond_error(engine, slot, .internal_server_error);
                 return;
             };
@@ -604,7 +604,9 @@ pub fn Server(comptime extension_modules: anytype) type {
             response.keep_alive = request.keep_alive and !draining and !worn_out;
 
             var writer: std.Io.Writer = .fixed(slot.write_buffer);
-            response_module.write_to(&response, &writer, request.method == .head) catch {
+            response_module.write_to(&response, &writer, .{
+                .head_only = request.method == .head,
+            }) catch {
                 connection.respond_error(engine, slot, .internal_server_error);
                 return;
             };

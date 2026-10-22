@@ -110,7 +110,7 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
         return .closed;
     };
 
-    const request = switch (parsed) {
+    const parsed_request = switch (parsed) {
         .incomplete => {
             if (slot.read_len == slot.read_buffer.len) {
                 respond_error(server, slot, .header_fields_too_large);
@@ -123,8 +123,11 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
 
             return .wait;
         },
-        .complete => |request| request,
+        .complete => |complete| complete,
     };
+    var request = parsed_request;
+
+    request.peer = slot.peer;
 
     if (request.content_length > 0) {
         if (server.stream_hooks) |hooks| {
@@ -251,7 +254,7 @@ pub fn respond_error(server: *Engine, slot: *Slot, status: Status) void {
     response.text(status, status_module.reason(status)) catch return close_slot(server, slot);
 
     var writer: std.Io.Writer = .fixed(slot.write_buffer);
-    response_module.write_to(&response, &writer, false) catch return close_slot(server, slot);
+    response_module.write_to(&response, &writer, .{}) catch return close_slot(server, slot);
 
     start_writing(server, slot, @intCast(writer.buffered().len), false, slot.read_len);
 }

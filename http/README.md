@@ -13,7 +13,7 @@ const http = @import("publr_http");
 const App = http.Server(.{});
 
 pub fn main(init: std.process.Init) !u8 {
-    return http.cli.serve(App, init, .{ .setup = &setup });
+    return http.cli.serve(App, init, &setup, .{});
 }
 
 fn setup(app: *App) !void {
@@ -104,7 +104,7 @@ const App = http.Server(.{
 
 pub fn main(init: std.process.Init) !u8 {
     var state: MyApp = .{};
-    return http.cli.serve(App, init, .{ .setup = &setup, .user_data = &state });
+    return http.cli.serve(App, init, &setup, .{ .user_data = &state });
 }
 
 fn setup(app: *App) !void {

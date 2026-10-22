@@ -11,7 +11,7 @@
 //!
 //! pub fn main(init: std.process.Init) !u8 {
 //!     var state: MyApp = .{};
-//!     return http.cli.serve(App, init, .{ .setup = &setup, .user_data = &state });
+//!     return http.cli.serve(App, init, &setup, .{ .user_data = &state });
 //! }
 //!
 //! fn setup(app: *App) !void {
@@ -34,12 +34,9 @@ const Parsed = union(enum) {
     exit: u8,
 };
 
-/// Per-app configuration for `serve`.
-pub fn Config(comptime App: type) type {
+/// What an app may set for `serve`, every field with a default.
+pub fn Options(comptime App: type) type {
     return struct {
-        /// Called once, after the app is built and before it listens: register routes
-        /// and finish wiring here.
-        setup: *const fn (app: *App) anyerror!void,
         /// Application state passed to every handler as `ctx.user_data`.
         user_data: ?*anyopaque = null,
         /// Called after every dispatch with the request and its final response
@@ -72,26 +69,35 @@ pub fn Config(comptime App: type) type {
 /// flag, a bad value, an unreadable config, an out-of-range option); 1 when the app
 /// could not start (`App.init` failed — the port is taken, the file limit is too
 /// low — or `setup` returned an error) or the loop failed while serving.
-pub fn serve(comptime App: type, init: std.process.Init, config: Config(App)) u8 {
-    const options = switch (parse(init, config.defaults, config.flags, config.flags_help)) {
-        .options => |options| options,
+///
+/// `setup` is called once, after the app is built and before it listens: register routes
+/// and finish wiring there.
+pub fn serve(
+    comptime App: type,
+    init: std.process.Init,
+    setup: *const fn (app: *App) anyerror!void,
+    options: Options(App),
+) u8 {
+    const parsed = parse(init, options.defaults, options.flags, options.flags_help);
+    const engine_options = switch (parsed) {
+        .options => |engine_options| engine_options,
         .exit => |code| return code,
     };
 
-    var app = App.init(init.gpa, options) catch |err| {
-        return init_failure(err, &options);
+    var app = App.init(init.gpa, engine_options) catch |err| {
+        return init_failure(err, &engine_options);
     };
     defer app.deinit();
 
-    app.user_data = config.user_data;
-    app.on_response = config.on_response;
+    app.user_data = options.user_data;
+    app.on_response = options.on_response;
 
     app.enable_shutdown_signals() catch |err| {
         std.debug.print("http-server: cannot install shutdown signals: {s}\n", .{@errorName(err)});
         return 1;
     };
 
-    config.setup(&app) catch |err| {
+    setup(&app) catch |err| {
         std.debug.print("http-server: setup failed: {s}\n", .{@errorName(err)});
         return 1;
     };
@@ -404,7 +410,7 @@ fn overlay(base: engine_module.Options, parsed: ConfigOptions) engine_module.Opt
 const flags_extra_max: u32 = 8;
 
 /// One command-line flag: a name and a typed pointer the parsed value is written
-/// through. Apps declare extras via `Config.flags`.
+/// through. Apps declare extras via `Options.flags`.
 pub const Flag = struct {
     /// The flag as typed, dashes included: `"--root"`.
     name: []const u8,

@@ -126,6 +126,9 @@ pub const Request = struct {
     keep_alive: bool,
     /// Bytes the head occupied, blank line included — where the body starts.
     head_len: u32,
+    /// The IPv4 address the connection came from, when the platform tells it; set by the
+    /// engine, never by the parser. Behind a proxy, the proxy's.
+    peer: ?[4]u8 = null,
 
     /// The first header named `name`, compared case-insensitively, or null.
     pub fn header(request: *const Request, name: []const u8) ?[]const u8 {

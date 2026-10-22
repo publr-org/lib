@@ -182,6 +182,23 @@ pub fn bound_port(fd: Fd) Error!u16 {
     return port;
 }
 
+/// The IPv4 address of the connection's other end; null when it cannot be read.
+pub fn peer_address(fd: Fd) ?[4]u8 {
+    std.debug.assert(fd >= 0);
+
+    var storage: linux.sockaddr.in = undefined;
+    var len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
+    const result = linux.getpeername(fd, @ptrCast(&storage), &len);
+
+    if (linux.errno(result) != .SUCCESS or storage.family != linux.AF.INET) {
+        return null;
+    }
+
+    std.debug.assert(len <= @sizeOf(linux.sockaddr.in));
+
+    return @bitCast(storage.addr);
+}
+
 pub fn ensure_file_limit(files_needed: u64) Error!void {
     std.debug.assert(files_needed > 0);
     std.debug.assert(files_needed < 1 << 24);

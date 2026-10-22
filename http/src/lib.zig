@@ -56,7 +56,7 @@
 //! ```zig
 //! pub fn main(init: std.process.Init) u8 {
 //!     var state: MyState = .{};
-//!     return http.cli.serve(App, init, .{ .setup = &setup, .user_data = &state });
+//!     return http.cli.serve(App, init, &setup, .{ .user_data = &state });
 //! }
 //! ```
 //!
@@ -105,7 +105,7 @@ pub const Response = impl_response.Response;
 /// The statuses a response can carry.
 pub const Status = impl_status.Status;
 
-/// The command-line face: `cli.serve` and its `Config`.
+/// The command-line face: `cli.serve` and its `Options`.
 pub const cli = @import("cli.zig");
 /// Process introspection for `/stats`-style endpoints: pid and CPU time.
 pub const process = @import("process.zig");

@@ -37,7 +37,7 @@ pub const Response = response_module.Response;
 
 /// Most routes one router can hold; sizes the route table embedded in `Router`.
 /// Registering past it is a programmer error caught by assertion.
-pub const routes_max: u32 = 256;
+pub const routes_max: u32 = 512;
 /// Most middleware functions one router can hold.
 pub const middleware_max: u32 = 16;
 /// Most `:param` captures one matched route can produce; sizes `Params`. A pattern
@@ -91,6 +91,14 @@ pub const Request = struct {
     params: Params = .{},
     /// The request body, fully buffered before dispatch. Empty when there is none.
     body: []const u8,
+
+    /// The IPv4 address the connection came from, when the platform tells it. Behind a
+    /// proxy, the proxy's: the caller decides whether to read a forwarded header.
+    pub fn peer(req: *const Request) ?[4]u8 {
+        std.debug.assert(req.inner.headers_len <= request_module.headers_max);
+
+        return req.inner.peer;
+    }
 
     /// The request method. A handler registered with `get` already knows it; this
     /// is for middleware that sees every request.

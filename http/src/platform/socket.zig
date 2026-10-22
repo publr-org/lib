@@ -23,6 +23,7 @@ pub const recv = if (builtin.os.tag == .windows) impl.recv_bytes else impl.recv;
 pub const send = if (builtin.os.tag == .windows) impl.send_bytes else impl.send;
 pub const close = impl.close;
 pub const bound_port = impl.bound_port;
+pub const peer_address = impl.peer_address;
 pub const ensure_file_limit = impl.ensure_file_limit;
 pub const effective_backlog_cap = impl.effective_backlog_cap;
 pub const monotonic_ms = impl.monotonic_ms;

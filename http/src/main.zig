@@ -17,8 +17,7 @@ const App = http.Server(.{});
 var root: []const u8 = ".";
 
 pub fn main(init: std.process.Init) u8 {
-    return http.cli.serve(App, init, .{
-        .setup = &setup,
+    return http.cli.serve(App, init, &setup, .{
         .flags = &.{
             .{
                 .name = "--root",

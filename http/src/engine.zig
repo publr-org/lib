@@ -268,6 +268,8 @@ pub const Slot = struct {
     keep_alive: bool = true,
     /// The peer half-closed: whatever is buffered is all there will ever be.
     peer_closed: bool = false,
+    /// The IPv4 address of the connection's other end, when the platform tells it.
+    peer: ?[4]u8 = null,
     /// On the pending list — pipelined requests are waiting past this tick's
     /// fairness budget (`pipeline_batch`).
     pending: bool = false,
@@ -415,9 +417,9 @@ pub const Engine = struct {
     /// longer than the scan interval.
     pub fn init(
         gpa: std.mem.Allocator,
-        options: Options,
         vtables: []const *const Extension,
         on_request: OnRequest,
+        options: Options,
     ) Error!Engine {
         std.debug.assert(vtables.len <= extensions_max);
         if (options.connections_max == 0 or options.connections_max > connections_limit) return error.InvalidOptions;
@@ -733,6 +735,7 @@ pub const Engine = struct {
 
             slot.* = .{
                 .fd = fd,
+                .peer = socket.peer_address(fd),
                 .state = .reading,
                 .generation = slot.generation,
                 .read_buffer = slot.read_buffer,

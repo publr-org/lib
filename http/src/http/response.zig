@@ -215,13 +215,23 @@ pub fn init(arena: std.mem.Allocator) Response {
 /// Serializes a response to the wire format: status line, the set headers, then
 /// the headers this writer owns (`X-Content-Type-Options: nosniff` on every
 /// response, `Content-Length` from the body, `Connection` from `keep_alive`),
-/// the blank line, and the body unless `head_only` (a HEAD request keeps the
+/// the blank line, and the body unless `options.head_only` (a HEAD request keeps the
 /// `Content-Length` but sends no body) or the status forbids one (204 and 304
 /// go out with `Content-Length: 0`, so a body set on them cannot desynchronize
 /// the client). The
 /// engine calls this into the slot's write buffer; fails with `error.WriteFailed`
 /// if the response does not fit.
-pub fn write_to(response: *const Response, writer: *std.Io.Writer, head_only: bool) Response.Error!void {
+pub const WriteOptions = struct {
+    head_only: bool = false,
+};
+
+pub fn write_to(
+    response: *const Response,
+    writer: *std.Io.Writer,
+    options: WriteOptions,
+) Response.Error!void {
+    const head_only = options.head_only;
+
     std.debug.assert(response.headers_len <= headers_max);
     std.debug.assert(response.body.len <= body_bytes_max);
 
@@ -426,7 +436,7 @@ test "text response serialises with content-length and keep-alive" {
 
     var out_buffer: [512]u8 = undefined;
     var out: std.Io.Writer = .fixed(&out_buffer);
-    try write_to(&response, &out, false);
+    try write_to(&response, &out, .{});
 
     const expected = "HTTP/1.1 200 OK\r\n" ++
         "Content-Type: text/plain; charset=utf-8\r\nX-Test: 2\r\n" ++
@@ -442,7 +452,7 @@ test "204 and 304 never carry a body, whatever was set" {
 
     var out_buffer: [512]u8 = undefined;
     var out: std.Io.Writer = .fixed(&out_buffer);
-    try write_to(&response, &out, false);
+    try write_to(&response, &out, .{});
 
     const expected = "HTTP/1.1 204 No Content\r\n" ++
         "Content-Type: text/plain; charset=utf-8\r\n" ++
@@ -489,7 +499,9 @@ test "json, redirect, head-only and limits" {
     var out_buffer: [512]u8 = undefined;
     var out: std.Io.Writer = .fixed(&out_buffer);
     response.keep_alive = false;
-    try write_to(&response, &out, true);
+    try write_to(&response, &out, .{
+        .head_only = true,
+    });
     try std.testing.expect(std.mem.endsWith(u8, out.buffered(), "Connection: close\r\n\r\n"));
 
     var many = init(arena_state.allocator());
@@ -514,7 +526,7 @@ test "a body written in place goes out behind its head, from the same buffer" {
     try response.html(.ok, buffer[room_at .. room_at + body.len]);
 
     var writer: std.Io.Writer = .fixed(&buffer);
-    try write_to(&response, &writer, false);
+    try write_to(&response, &writer, .{});
 
     const sent = writer.buffered();
     try std.testing.expect(std.mem.startsWith(u8, sent, "HTTP/1.1 200 OK\r\n"));
@@ -527,5 +539,5 @@ test "a body written in place goes out behind its head, from the same buffer" {
     var crowded = init(std.testing.allocator);
     try crowded.html(.ok, tight[8 .. 8 + body.len]);
     var tight_writer: std.Io.Writer = .fixed(&tight);
-    try std.testing.expectError(error.WriteFailed, write_to(&crowded, &tight_writer, false));
+    try std.testing.expectError(error.WriteFailed, write_to(&crowded, &tight_writer, .{}));
 }
