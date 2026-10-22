@@ -10,6 +10,7 @@
         .publr_auth = .{ .path = "auth" },
         .publr_groq = .{ .path = "groq" },
         .publr_ai = .{ .path = "ai" },
+        .publr_text = .{ .path = "text" },
     },
     .paths = .{
         "build.zig",
