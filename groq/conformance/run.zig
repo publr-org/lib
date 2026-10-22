@@ -273,12 +273,12 @@ fn check(
     }
 
     var problem: groq.Problem = .{};
-    const result = groq.execute(arena, query, memory.dataset(), .{
+    const result = groq.execute(arena, query, memory.dataset(), &problem, .{
         .params = params.object,
         .now = .{
             .seconds = 1_700_000_000,
         },
-    }, &problem);
+    });
 
     if (!valid) {
         if (result) |got| {

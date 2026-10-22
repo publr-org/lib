@@ -9,7 +9,7 @@ const groq = @import("publr_groq");
 
 var memory: groq.Memory = .{ .documents = documents };
 var problem: groq.Problem = .{};
-const answer = try groq.execute(arena, query, memory.dataset(), .{ .params = params }, &problem);
+const answer = try groq.execute(arena, query, memory.dataset(), &problem, .{ .params = params });
 const json = try groq.values.to_json(arena, answer.value);
 ```
 

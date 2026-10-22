@@ -26,17 +26,17 @@ pub const Problem = struct {
     message: []const u8 = "",
 };
 
-pub fn parse(arena: std.mem.Allocator, text: []const u8, problem: *Problem) Error!tree.Query {
-    return parse_with(arena, text, .{}, problem);
-}
+pub const Options = struct {
+    /// The query's parameters: inside square brackets they are constants, so `[$from..$to]`
+    /// is a slice and `[$index]` an element.
+    params: value_module.Object = .{},
+};
 
-/// With the query's parameters: inside square brackets they are constants, so `[$from..$to]`
-/// is a slice and `[$index]` an element.
-pub fn parse_with(
+pub fn parse(
     arena: std.mem.Allocator,
     text: []const u8,
-    params: value_module.Object,
     problem: *Problem,
+    options: Options,
 ) Error!tree.Query {
     std.debug.assert(depth_max > 0);
 
@@ -50,7 +50,7 @@ pub fn parse_with(
         .arena = arena,
         .tokens = tokens,
         .problem = problem,
-        .params = params,
+        .params = options.params,
     };
     const root = try parser.expression(0, 0);
 
@@ -367,11 +367,11 @@ test "syntax: precedence, traversals, brackets told apart" {
     const arena = arena_state.allocator();
     var problem: Problem = .{};
 
-    const power = try parse(arena, "-2 ** 2", &problem);
+    const power = try parse(arena, "-2 ** 2", &problem, .{});
 
     try std.testing.expect(power.node(power.root) == .negate);
 
-    const chain = try parse(arena, "*[_type == \"a\"][0..-1].items[]->title", &problem);
+    const chain = try parse(arena, "*[_type == \"a\"][0..-1].items[]->title", &problem, .{});
     const steps = chain.node(chain.root).traversal.steps;
 
     try std.testing.expectEqual(@as(usize, 5), steps.len);
@@ -380,15 +380,15 @@ test "syntax: precedence, traversals, brackets told apart" {
     try std.testing.expect(steps[3] == .array_postfix);
     try std.testing.expectEqualStrings("title", steps[4].dereference.?);
 
-    const keyed = try parse(arena, "x[\"name\"][1 + 1]", &problem);
+    const keyed = try parse(arena, "x[\"name\"][1 + 1]", &problem, .{});
 
     try std.testing.expectEqualStrings("name", keyed.node(keyed.root).traversal.steps[0].attribute);
     try std.testing.expectEqual(@as(i64, 2), keyed.node(keyed.root).traversal.steps[1].element);
-    try std.testing.expectError(error.Invalid, parse(arena, "a == b == c", &problem));
-    try std.testing.expectError(error.Invalid, parse(arena, "x[1.5]", &problem));
-    try std.testing.expectError(error.Invalid, parse(arena, "{a.b}", &problem));
+    try std.testing.expectError(error.Invalid, parse(arena, "a == b == c", &problem, .{}));
+    try std.testing.expectError(error.Invalid, parse(arena, "x[1.5]", &problem, .{}));
+    try std.testing.expectError(error.Invalid, parse(arena, "{a.b}", &problem, .{}));
 
-    const piped = try parse(arena, "*[a > 1] | order(a desc) | {a}", &problem);
+    const piped = try parse(arena, "*[a > 1] | order(a desc) | {a}", &problem, .{});
 
     try std.testing.expect(piped.node(piped.root) == .traversal);
 }

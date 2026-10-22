@@ -9,7 +9,7 @@
 //! var memory: groq.Memory = .{ .documents = documents };
 //! var problem: groq.Problem = .{};
 //! const query = "*[_type == \"post\"]{ title }";
-//! const answer = try groq.execute(arena, query, memory.dataset(), .{}, &problem);
+//! const answer = try groq.execute(arena, query, memory.dataset(), &problem, .{});
 //! const json = try groq.values.to_json(arena, answer.value);
 //! ```
 
@@ -33,6 +33,7 @@ pub const Found = dataset_module.Found;
 pub const Problem = syntax.Problem;
 pub const tree = @import("tree.zig");
 pub const parse = syntax.parse;
+pub const ParseOptions = syntax.Options;
 
 pub const Error = error{ Invalid, OutOfMemory, TooDeep, TooMuchWork, DatasetFailed, OutOfReach };
 
@@ -54,12 +55,14 @@ pub fn execute(
     arena: std.mem.Allocator,
     text: []const u8,
     dataset: Dataset,
-    options: Options,
     problem: *Problem,
+    options: Options,
 ) Error!Answer {
     std.debug.assert(options.work_steps > 0);
 
-    const query = try syntax.parse_with(arena, text, options.params, problem);
+    const query = try syntax.parse(arena, text, problem, .{
+        .params = options.params,
+    });
 
     try validate_module.validate(arena, &query, options.params, problem);
 
