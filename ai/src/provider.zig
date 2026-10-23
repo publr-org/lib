@@ -93,6 +93,17 @@ pub const Description = struct {
     /// Whether it turns speech into text, through `<plugin>.transcribe`.
     speech: bool = false,
 
+    /// Each field in words, for the reference of an operation that answers a description.
+    pub const field_docs = .{
+        .id = "The provider's id: lowercase letters, digits and underscores",
+        .label = "Its name as people read it",
+        .models = "The models it offers",
+        .default_model = "One of `models`, used when none is chosen",
+        .key = "How its key is made and how one looks; absent when it needs none",
+        .pictures = "Whether its models look at pictures",
+        .speech = "Whether it turns speech into text",
+    };
+
     pub fn valid(description: providers.Description) bool {
         std.debug.assert(description.id.len <= 64);
         std.debug.assert(description.models.len <= 256);
