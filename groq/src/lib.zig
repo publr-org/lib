@@ -34,6 +34,7 @@ pub const Problem = syntax.Problem;
 pub const tree = @import("tree.zig");
 pub const parse = syntax.parse;
 pub const bind = syntax.bind;
+pub const validate = validate_module.validate;
 
 pub const Error = error{ Invalid, OutOfMemory, TooDeep, TooMuchWork, DatasetFailed, OutOfReach };
 
