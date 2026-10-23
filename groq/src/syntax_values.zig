@@ -19,7 +19,7 @@ const Parser = syntax.Parser;
 const Error = syntax.Error;
 const depth_max = syntax.depth_max;
 
-const ConstantError = error{ NotConstant, OutOfMemory };
+const ConstantError = error{ NotConstant, Param, OutOfMemory };
 
 /// Traversal steps and pipe calls after an expression (level 11).
 pub fn postfix(parser: *Parser, start: Index, depth: u32) Error!Index {
@@ -126,7 +126,8 @@ pub fn step(parser: *Parser, depth: u32) Error!?Step {
     }
 }
 
-/// After `[`: `[]`, a slice, or what constant evaluation says (section 8.8).
+/// After `[`: `[]`, a slice, or what constant evaluation says (section 8.8); one that reads
+/// a `$param` waits for the parameters.
 pub fn bracket(parser: *Parser, depth: u32) Error!Step {
     std.debug.assert(parser.at < parser.tokens.len);
 
@@ -138,10 +139,47 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
 
     _ = try parser.expect(.right_bracket, "`]`");
 
-    if (parser.nodes.items[inner] == .range) {
-        const range = parser.nodes.items[inner].range;
-        const start = try whole_constant(parser, range.start, "a slice runs between whole numbers");
-        const end = try whole_constant(parser, range.end, "a slice runs between whole numbers");
+    const constants: Constants = .{
+        .arena = parser.arena,
+        .nodes = parser.nodes.items,
+        .params = null,
+    };
+    var message: []const u8 = "";
+
+    return step_of(constants, inner, &message) catch |err| switch (err) {
+        error.Param => {
+            parser.deferred = true;
+            return .{
+                .bracket = inner,
+            };
+        },
+        error.Invalid => parser.fail(message),
+        error.OutOfMemory => error.OutOfMemory,
+    };
+}
+
+/// What constant evaluation reads: the query's nodes and its parameters, null while they
+/// are not bound yet.
+pub const Constants = struct {
+    arena: std.mem.Allocator,
+    nodes: []const tree.Node,
+    params: ?value_module.Object,
+};
+
+/// What `[inner]` is (section 8.8): a slice, an element, an attribute or a filter;
+/// `error.Param` while a `$param` it reads is not bound.
+pub fn step_of(
+    constants: Constants,
+    inner: Index,
+    message: *[]const u8,
+) (Error || error{Param})!Step {
+    std.debug.assert(inner < constants.nodes.len);
+
+    if (constants.nodes[inner] == .range) {
+        const range = constants.nodes[inner].range;
+        const slice = "a slice runs between whole numbers";
+        const start = try whole_constant(constants, range.start, slice, message);
+        const end = try whole_constant(constants, range.end, slice, message);
 
         return .{
             .slice = .{
@@ -152,11 +190,11 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
         };
     }
 
-    const constant = constant_value(parser, inner) catch |err| switch (err) {
+    const constant = constant_value(constants, inner) catch |err| switch (err) {
         error.NotConstant => return .{
             .filter = inner,
         },
-        error.OutOfMemory => return error.OutOfMemory,
+        error.Param, error.OutOfMemory => |held| return held,
     };
 
     return switch (constant) {
@@ -164,7 +202,7 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
             .attribute = name,
         },
         .number => .{
-            .element = try whole_constant(parser, inner, "an index is a whole number"),
+            .element = try whole_constant(constants, inner, "an index is a whole number", message),
         },
         else => .{
             .filter = inner,
@@ -172,20 +210,27 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
     };
 }
 
-pub fn whole_constant(parser: *Parser, index: Index, message: []const u8) Error!i64 {
-    std.debug.assert(parser.at < parser.tokens.len);
+fn whole_constant(
+    constants: Constants,
+    index: Index,
+    why: []const u8,
+    message: *[]const u8,
+) (Error || error{Param})!i64 {
+    std.debug.assert(why.len > 0);
 
-    const constant = constant_value(parser, index) catch |err| switch (err) {
-        error.NotConstant => return parser.fail(message),
-        error.OutOfMemory => return error.OutOfMemory,
+    const constant = constant_value(constants, index) catch |err| switch (err) {
+        error.NotConstant => {
+            message.* = why;
+            return error.Invalid;
+        },
+        error.Param, error.OutOfMemory => |held| return held,
     };
 
-    if (constant != .number or @floor(constant.number) != constant.number) {
-        return parser.fail(message);
-    }
-
-    if (@abs(constant.number) > 9.0e15) {
-        return parser.fail(message);
+    if (constant != .number or @floor(constant.number) != constant.number or
+        @abs(constant.number) > 9.0e15)
+    {
+        message.* = why;
+        return error.Invalid;
     }
 
     return @intFromFloat(constant.number);
@@ -437,24 +482,28 @@ fn name_of(parser: *const Parser, index: Index) ?[]const u8 {
 
     return null;
 }
-/// ConstantEvaluate (section 3.8): literals, parentheses and the arithmetic operators.
-pub fn constant_value(parser: *Parser, index: Index) ConstantError!Value {
-    std.debug.assert(parser.at < parser.tokens.len);
+/// ConstantEvaluate (section 3.8): literals, parameters, parentheses and the arithmetic
+/// operators.
+pub fn constant_value(constants: Constants, index: Index) ConstantError!Value {
+    std.debug.assert(index < constants.nodes.len);
 
-    const node = parser.nodes.items[index];
+    const node = constants.nodes[index];
 
     return switch (node) {
         .literal => |literal| literal,
-        .param => |name| parser.params.get(name) orelse error.NotConstant,
-        .group => |inner| constant_value(parser, inner),
-        .negate => |inner| operators.negate(try constant_value(parser, inner)),
-        .positive => |inner| operators.positive(try constant_value(parser, inner)),
+        .param => |name| if (constants.params) |params|
+            params.get(name) orelse error.NotConstant
+        else
+            error.Param,
+        .group => |inner| constant_value(constants, inner),
+        .negate => |inner| operators.negate(try constant_value(constants, inner)),
+        .positive => |inner| operators.positive(try constant_value(constants, inner)),
         .binary => |pair| {
-            const left = try constant_value(parser, pair.left);
-            const right = try constant_value(parser, pair.right);
+            const left = try constant_value(constants, pair.left);
+            const right = try constant_value(constants, pair.right);
 
             return switch (pair.operator) {
-                .plus => operators.plus(parser.arena, left, right),
+                .plus => operators.plus(constants.arena, left, right),
                 .minus => operators.minus(left, right),
                 .star => operators.star(left, right),
                 .slash => operators.slash(left, right),

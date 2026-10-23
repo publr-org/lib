@@ -303,6 +303,7 @@ fn apply(context: *Context, step: Step, base: Value, scope: *const Scope, depth:
             return evaluate_module.object_of(context, attributes, &inner, depth);
         },
         .dereference => |name| dereference_of(context, base, name),
+        .bracket => unreachable,
     };
 }
 

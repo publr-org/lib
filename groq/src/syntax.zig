@@ -26,17 +26,10 @@ pub const Problem = struct {
     message: []const u8 = "",
 };
 
-pub const Options = struct {
-    /// The query's parameters: inside square brackets they are constants, so `[$from..$to]`
-    /// is a slice and `[$index]` an element.
-    params: value_module.Object = .{},
-};
-
 pub fn parse(
     arena: std.mem.Allocator,
     text: []const u8,
     problem: *Problem,
-    options: Options,
 ) Error!tree.Query {
     std.debug.assert(depth_max > 0);
 
@@ -50,7 +43,6 @@ pub fn parse(
         .arena = arena,
         .tokens = tokens,
         .problem = problem,
-        .params = options.params,
     };
     const root = try parser.expression(0, 0);
 
@@ -61,6 +53,70 @@ pub fn parse(
     return .{
         .nodes = parser.nodes.items,
         .root = root,
+        .deferred = parser.deferred,
+    };
+}
+
+/// The query with its parameters bound: square brackets that read a `$param` told apart by
+/// their values (`[$index]` an element, `[$from...$to]` a slice). A parsed query is kept
+/// and bound again for each run; one with no such brackets is returned as it is.
+pub fn bind(
+    arena: std.mem.Allocator,
+    query: *const tree.Query,
+    params: value_module.Object,
+    problem: *Problem,
+) Error!tree.Query {
+    std.debug.assert(query.root < query.nodes.len);
+
+    if (!query.deferred) {
+        return query.*;
+    }
+
+    const nodes = try arena.dupe(Node, query.nodes);
+    const constants: values.Constants = .{
+        .arena = arena,
+        .nodes = query.nodes,
+        .params = params,
+    };
+
+    for (nodes) |*node| {
+        if (node.* != .traversal) {
+            continue;
+        }
+
+        var steps: ?[]Step = null;
+
+        for (node.traversal.steps, 0..) |step, index| {
+            if (step != .bracket) {
+                continue;
+            }
+
+            const bound = steps orelse try arena.dupe(Step, node.traversal.steps);
+            var message: []const u8 = "";
+
+            bound[index] = values.step_of(constants, step.bracket, &message) catch |err| {
+                switch (err) {
+                    error.Param => unreachable,
+                    error.Invalid => {
+                        problem.* = .{
+                            .message = message,
+                        };
+                        return error.Invalid;
+                    },
+                    error.OutOfMemory => return error.OutOfMemory,
+                }
+            };
+            steps = bound;
+        }
+
+        if (steps) |bound| {
+            node.traversal.steps = bound;
+        }
+    }
+
+    return .{
+        .nodes = nodes,
+        .root = query.root,
     };
 }
 
@@ -81,8 +137,9 @@ pub const Parser = struct {
     arena: std.mem.Allocator,
     tokens: []const Token,
     problem: *Problem,
-    params: value_module.Object = .{},
     at: u32 = 0,
+    /// A square bracket waits for the parameters.
+    deferred: bool = false,
     nodes: std.ArrayList(Node) = .empty,
 
     pub fn peek(parser: *const Parser) Token {
@@ -367,11 +424,11 @@ test "syntax: precedence, traversals, brackets told apart" {
     const arena = arena_state.allocator();
     var problem: Problem = .{};
 
-    const power = try parse(arena, "-2 ** 2", &problem, .{});
+    const power = try parse(arena, "-2 ** 2", &problem);
 
     try std.testing.expect(power.node(power.root) == .negate);
 
-    const chain = try parse(arena, "*[_type == \"a\"][0..-1].items[]->title", &problem, .{});
+    const chain = try parse(arena, "*[_type == \"a\"][0..-1].items[]->title", &problem);
     const steps = chain.node(chain.root).traversal.steps;
 
     try std.testing.expectEqual(@as(usize, 5), steps.len);
@@ -380,15 +437,51 @@ test "syntax: precedence, traversals, brackets told apart" {
     try std.testing.expect(steps[3] == .array_postfix);
     try std.testing.expectEqualStrings("title", steps[4].dereference.?);
 
-    const keyed = try parse(arena, "x[\"name\"][1 + 1]", &problem, .{});
+    const keyed = try parse(arena, "x[\"name\"][1 + 1]", &problem);
 
     try std.testing.expectEqualStrings("name", keyed.node(keyed.root).traversal.steps[0].attribute);
     try std.testing.expectEqual(@as(i64, 2), keyed.node(keyed.root).traversal.steps[1].element);
-    try std.testing.expectError(error.Invalid, parse(arena, "a == b == c", &problem, .{}));
-    try std.testing.expectError(error.Invalid, parse(arena, "x[1.5]", &problem, .{}));
-    try std.testing.expectError(error.Invalid, parse(arena, "{a.b}", &problem, .{}));
+    try std.testing.expectError(error.Invalid, parse(arena, "a == b == c", &problem));
+    try std.testing.expectError(error.Invalid, parse(arena, "x[1.5]", &problem));
+    try std.testing.expectError(error.Invalid, parse(arena, "{a.b}", &problem));
 
-    const piped = try parse(arena, "*[a > 1] | order(a desc) | {a}", &problem, .{});
+    const piped = try parse(arena, "*[a > 1] | order(a desc) | {a}", &problem);
 
     try std.testing.expect(piped.node(piped.root) == .traversal);
+}
+
+test "syntax: brackets that read a parameter, told apart when it is bound" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var problem: Problem = .{};
+
+    const kept = try parse(arena, "*[_type == $type][$from...$to].tags[$at]", &problem);
+    const waiting = kept.node(kept.root).traversal.steps;
+
+    try std.testing.expect(kept.deferred);
+    try std.testing.expect(waiting[0] == .filter and waiting[1] == .bracket);
+
+    var params: value_module.ObjectBuilder = .{};
+
+    try params.put(arena, "type", .{ .string = "post" });
+    try params.put(arena, "from", .{ .number = 2 });
+    try params.put(arena, "to", .{ .number = 4 });
+    try params.put(arena, "at", .{ .number = 1 });
+
+    const bound = try bind(arena, &kept, params.object(), &problem);
+    const steps = bound.node(bound.root).traversal.steps;
+
+    try std.testing.expect(steps[0] == .filter);
+    try std.testing.expectEqual(@as(i64, 2), steps[1].slice.start);
+    try std.testing.expectEqual(@as(i64, 4), steps[1].slice.end);
+    try std.testing.expectEqual(@as(i64, 1), steps[3].element);
+    try std.testing.expect(waiting[1] == .bracket);
+
+    try params.put(arena, "from", .{ .number = 1.5 });
+    try std.testing.expectError(error.Invalid, bind(arena, &kept, params.object(), &problem));
+
+    const plain = try parse(arena, "*[_type == \"post\"][0...2]", &problem);
+
+    try std.testing.expect(!plain.deferred);
 }
