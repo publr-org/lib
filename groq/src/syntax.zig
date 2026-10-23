@@ -114,10 +114,42 @@ pub fn bind(
         }
     }
 
+    // A bracket bound to a name (`items[$key]`) reads an attribute: the value it stands in
+    // derives no key, as when the name is written in the query.
+    for (nodes) |node| {
+        const keyed = switch (node) {
+            .object => |attributes| named(nodes, attributes),
+            .traversal => |traversal| for (traversal.steps) |step| {
+                if (step == .projection and !named(nodes, step.projection)) {
+                    break false;
+                }
+            } else true,
+            else => true,
+        };
+
+        if (!keyed) {
+            problem.* = .{
+                .message = values.needs_key,
+            };
+            return error.Invalid;
+        }
+    }
+
     return .{
         .nodes = nodes,
         .root = query.root,
     };
+}
+
+/// Whether each derived key still reads a name once the brackets are bound.
+fn named(nodes: []const Node, attributes: []const tree.Attribute) bool {
+    for (attributes) |attribute| {
+        if (attribute == .derived and values.name_of(nodes, attribute.derived.value) == null) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /// Levels of section 10, lowest first; an infix operator binds at its level.
@@ -480,6 +512,18 @@ test "syntax: brackets that read a parameter, told apart when it is bound" {
 
     try params.put(arena, "from", .{ .number = 1.5 });
     try std.testing.expectError(error.Invalid, bind(arena, &kept, params.object(), &problem));
+
+    // A name bound into a derived key's value leaves it without a key, as written: the
+    // answer the query had when brackets were told apart while it was read.
+    const derived = try parse(arena, "{ items[$at] }", &problem);
+
+    try std.testing.expectEqualStrings("items", derived.node(derived.root).object[0].derived.key);
+    _ = try bind(arena, &derived, params.object(), &problem);
+    try params.put(arena, "at", .{ .string = "name" });
+    try std.testing.expectError(error.Invalid, bind(arena, &derived, params.object(), &problem));
+    try std.testing.expectEqualStrings(values.needs_key, problem.message);
+    try std.testing.expectError(error.Invalid, parse(arena, "{ items[\"name\"] }", &problem));
+    try std.testing.expectEqualStrings(values.needs_key, problem.message);
 
     const plain = try parse(arena, "*[_type == \"post\"][0...2]", &problem);
 

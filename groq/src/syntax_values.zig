@@ -158,6 +158,8 @@ pub fn bracket(parser: *Parser, depth: u32) Error!Step {
     };
 }
 
+pub const needs_key = "this value needs a key: `\"name\": value`";
+
 /// What constant evaluation reads: the query's nodes and its parameters, null while they
 /// are not bound yet.
 pub const Constants = struct {
@@ -375,8 +377,8 @@ pub fn attribute(parser: *Parser, depth: u32) Error!tree.Attribute {
         };
     }
 
-    const key = name_of(parser, held) orelse {
-        return parser.fail("this value needs a key: `\"name\": value`");
+    const key = name_of(parser.nodes.items, held) orelse {
+        return parser.fail(needs_key);
     };
 
     return .{
@@ -458,13 +460,13 @@ pub fn call_of(parser: *Parser, token: Token, depth: u32) Error!tree.Call {
 
 /// DetermineName (section 4.6): the attribute a value reads, through the steps that keep
 /// it (`items[0]`, `items[]`, `items{...}`, `author->`); null when it reads none.
-fn name_of(parser: *const Parser, index: Index) ?[]const u8 {
-    std.debug.assert(parser.at < parser.tokens.len);
+pub fn name_of(nodes: []const tree.Node, index: Index) ?[]const u8 {
+    std.debug.assert(index < nodes.len);
 
     var at = index;
 
     for (0..depth_max) |_| {
-        switch (parser.nodes.items[at]) {
+        switch (nodes[at]) {
             .this_attribute => |name| return name,
             .pipe => |piped| at = piped.base,
             .traversal => |traversal| {
