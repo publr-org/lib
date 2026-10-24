@@ -33,7 +33,8 @@ pub const Found = dataset_module.Found;
 pub const Problem = syntax.Problem;
 pub const tree = @import("tree.zig");
 pub const parse = syntax.parse;
-pub const ParseOptions = syntax.Options;
+pub const bind = syntax.bind;
+pub const validate = validate_module.validate;
 
 pub const Error = error{ Invalid, OutOfMemory, TooDeep, TooMuchWork, DatasetFailed, OutOfReach };
 
@@ -60,9 +61,23 @@ pub fn execute(
 ) Error!Answer {
     std.debug.assert(options.work_steps > 0);
 
-    const query = try syntax.parse(arena, text, problem, .{
-        .params = options.params,
-    });
+    const query = try syntax.parse(arena, text, problem);
+
+    return run(arena, &query, dataset, problem, options);
+}
+
+/// `execute` for a query parsed once and kept (`parse`): its parameters bound, then
+/// validated and evaluated.
+pub fn run(
+    arena: std.mem.Allocator,
+    parsed: *const tree.Query,
+    dataset: Dataset,
+    problem: *Problem,
+    options: Options,
+) Error!Answer {
+    std.debug.assert(options.work_steps > 0);
+
+    const query = try syntax.bind(arena, parsed, options.params, problem);
 
     try validate_module.validate(arena, &query, options.params, problem);
 

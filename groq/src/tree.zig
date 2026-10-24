@@ -55,7 +55,8 @@ pub const Call = struct {
 };
 
 /// One traversal step (GROQ-1.revision5, "Traversal operators"). Indexes and slice ends are
-/// constants: square brackets are told apart when the query is read.
+/// constants: square brackets are told apart when the query is read, or, when they read a
+/// `$param`, when its parameters are bound.
 pub const Step = union(enum) {
     attribute: []const u8,
     element: i64,
@@ -68,6 +69,9 @@ pub const Step = union(enum) {
     array_postfix,
     projection: []const Attribute,
     dereference: ?[]const u8,
+    /// `[$index]`, `[$from...$to]`: square brackets that read a `$param`, told apart when
+    /// the query's parameters are bound (`syntax.bind`), never evaluated as they are.
+    bracket: Index,
 
     /// How a step treats arrays: what it works on and what it returns.
     pub const Shape = enum { plain, element, array, projection };
@@ -80,6 +84,7 @@ pub const Step = union(enum) {
             .element => .element,
             .slice, .filter, .array_postfix => .array,
             .projection => .projection,
+            .bracket => unreachable,
         };
     }
 };
@@ -127,6 +132,8 @@ pub const Node = union(enum) {
 pub const Query = struct {
     nodes: []const Node,
     root: Index,
+    /// Some square brackets wait for the parameters (`Step.bracket`).
+    deferred: bool = false,
 
     pub fn node(query: *const Query, index: Index) Node {
         std.debug.assert(index < query.nodes.len);
