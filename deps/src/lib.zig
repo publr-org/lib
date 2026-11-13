@@ -98,6 +98,11 @@ const schema =
     \\    key TEXT NOT NULL,
     \\    PRIMARY KEY (revision, key)
     \\) WITHOUT ROWID;
+    \\CREATE TABLE IF NOT EXISTS deps_published (
+    \\    revision INTEGER NOT NULL,
+    \\    name TEXT NOT NULL,
+    \\    PRIMARY KEY (revision, name)
+    \\) WITHOUT ROWID;
     \\CREATE TABLE IF NOT EXISTS deps_edges (
     \\    artifact TEXT NOT NULL,
     \\    key TEXT NOT NULL,
@@ -192,6 +197,7 @@ pub const Index = struct {
         try hashes.bind_text(1, artifact);
         try hashes.exec();
 
+        try index.append(published_log, &.{artifact});
         try transaction.commit();
     }
 
@@ -259,37 +265,135 @@ pub const Index = struct {
     /// keys are bounded above by the revision read first, and the floor is
     /// read again afterwards, so a prune that lands in between is caught.
     pub fn changes_since(index: *Index, arena: std.mem.Allocator, after: u64) Error!Changes {
+        const found = try index.since(arena, key_log, after);
+        return .{
+            .revision = found.revision,
+            .reset = found.reset,
+            .keys = found.entries,
+        };
+    }
+
+    // ---- what was published ---------------------------------------------------
+
+    /// Artifacts whose bytes changed or that went away, and whatever else the
+    /// caller names as changed for good (a whole site after its templates
+    /// changed): what a cache in front must drop. Logged by `unchanged` and
+    /// `forget` on their own, so every write path is covered.
+    pub fn publish(index: *Index, names: []const []const u8) Error!void {
+        for (names) |name| try index.check_name(name);
+        if (names.len == 0) return;
+
+        var transaction = try index.db.transaction();
+        defer transaction.rollback();
+        try index.append(published_log, names);
+        try transaction.commit();
+    }
+
+    pub fn published_revision(index: *Index) Error!u64 {
+        return @intCast((try index.get_meta(published_log.revision_meta)) orelse 0);
+    }
+
+    pub const Published = struct {
+        revision: u64,
+        reset: bool,
+        names: []const []const u8,
+    };
+
+    /// What was published after revision `after`, read as `changes_since`
+    /// reads; `reset` asks the cache to drop everything instead.
+    pub fn published_since(index: *Index, arena: std.mem.Allocator, after: u64) Error!Published {
+        const found = try index.since(arena, published_log, after);
+        return .{
+            .revision = found.revision,
+            .reset = found.reset,
+            .names = found.entries,
+        };
+    }
+
+    // ---- the two logs ----------------------------------------------------------
+
+    /// A log of names by revision, pruned to `replay_max` revisions.
+    const Log = struct {
+        table: []const u8,
+        column: []const u8,
+        revision_meta: []const u8,
+        floor_meta: []const u8,
+    };
+
+    const key_log: Log = .{
+        .table = "deps_changes",
+        .column = "key",
+        .revision_meta = "revision",
+        .floor_meta = "replay_floor",
+    };
+    const published_log: Log = .{
+        .table = "deps_published",
+        .column = "name",
+        .revision_meta = "published_revision",
+        .floor_meta = "published_floor",
+    };
+
+    /// `values` as the log's next revision. The caller holds the transaction.
+    fn append(index: *Index, comptime log: Log, values: []const []const u8) Error!void {
+        const next: u64 = @as(u64, @intCast((try index.get_meta(log.revision_meta)) orelse 0)) + 1;
+        var insert = try index.db.prepare("INSERT OR IGNORE INTO " ++ log.table ++ " (revision, " ++ log.column ++ ") VALUES (?1, ?2)");
+        defer insert.finalize();
+        for (values) |value| {
+            insert.reset();
+            try insert.bind_int(1, @intCast(next));
+            try insert.bind_text(2, value);
+            try insert.exec();
+        }
+        try index.put_meta(log.revision_meta, @intCast(next));
+        const floor = next -| index.options.replay_max;
+        var prune = try index.db.prepare("DELETE FROM " ++ log.table ++ " WHERE revision <= ?1");
+        defer prune.finalize();
+        try prune.bind_int(1, @intCast(floor));
+        try prune.exec();
+        try index.put_meta(log.floor_meta, @intCast(floor));
+    }
+
+    const Since = struct {
+        revision: u64,
+        reset: bool,
+        entries: []const []const u8,
+    };
+
+    /// Reads without a transaction so polling never takes the write lock: the
+    /// entries are bounded above by the revision read first, and the floor is
+    /// read again afterwards, so a prune that lands in between is caught.
+    fn since(index: *Index, arena: std.mem.Allocator, comptime log: Log, after: u64) Error!Since {
         if (index.db.transaction_depth != 0) return error.UncommittedRead;
-        const latest = try index.revision();
-        const reset: Changes = .{
+        const latest: u64 = @intCast((try index.get_meta(log.revision_meta)) orelse 0);
+        const reset: Since = .{
             .revision = latest,
             .reset = true,
-            .keys = &.{},
+            .entries = &.{},
         };
-        if (after < try index.replay_floor() or after > latest) return reset;
-        var select = try index.db.prepare("SELECT DISTINCT key FROM deps_changes WHERE revision > ?1 AND revision <= ?2 ORDER BY key LIMIT ?3");
+        if (after < try index.floor_of(log) or after > latest) return reset;
+        var select = try index.db.prepare("SELECT DISTINCT " ++ log.column ++ " AS entry FROM " ++ log.table ++ " WHERE revision > ?1 AND revision <= ?2 ORDER BY entry LIMIT ?3");
         defer select.finalize();
         try select.bind_int(1, @intCast(after));
         try select.bind_int(2, @intCast(latest));
         try select.bind_int(3, @as(i64, index.options.keys_max) + 1);
-        var keys: std.ArrayList([]const u8) = .empty;
+        var entries: std.ArrayList([]const u8) = .empty;
         while (try select.step()) {
-            if (keys.items.len == index.options.keys_max) return reset;
+            if (entries.items.len == index.options.keys_max) return reset;
             const row = try select.read(struct {
-                key: []const u8,
+                entry: []const u8,
             }, arena);
-            try keys.append(arena, row.key);
+            try entries.append(arena, row.entry);
         }
-        if (after < try index.replay_floor()) return reset;
+        if (after < try index.floor_of(log)) return reset;
         return .{
             .revision = latest,
             .reset = false,
-            .keys = try keys.toOwnedSlice(arena),
+            .entries = try entries.toOwnedSlice(arena),
         };
     }
 
-    fn replay_floor(index: *Index) Error!u64 {
-        return @intCast((try index.get_meta("replay_floor")) orelse 0);
+    fn floor_of(index: *Index, comptime log: Log) Error!u64 {
+        return @intCast((try index.get_meta(log.floor_meta)) orelse 0);
     }
 
     // ---- the queue -----------------------------------------------------------
@@ -313,22 +417,7 @@ pub const Index = struct {
             index.emit(.invalidated, .{ key, index.db.changes() == 1 });
         }
 
-        const next = (try index.revision()) + 1;
-        var log = try index.db.prepare("INSERT OR IGNORE INTO deps_changes (revision, key) VALUES (?1, ?2)");
-        defer log.finalize();
-        for (keys) |key| {
-            log.reset();
-            try log.bind_int(1, @intCast(next));
-            try log.bind_text(2, key);
-            try log.exec();
-        }
-        try index.put_meta("revision", @intCast(next));
-        const floor = next -| index.options.replay_max;
-        var prune = try index.db.prepare("DELETE FROM deps_changes WHERE revision <= ?1");
-        defer prune.finalize();
-        try prune.bind_int(1, @intCast(floor));
-        try prune.exec();
-        try index.put_meta("replay_floor", @intCast(floor));
+        try index.append(key_log, keys);
         try index.put_meta("last_change_ms", now_ms);
         if (try index.collecting_count() >= index.options.queue_cap) {
             _ = try index.seal();
@@ -427,11 +516,15 @@ pub const Index = struct {
         const previous: ?i64 = if (try select.step()) select.read_int() else null;
         if (previous == hash) return true;
 
+        var transaction = try index.db.transaction();
+        defer transaction.rollback();
         var upsert = try index.db.prepare("INSERT INTO deps_artifacts (artifact, hash) VALUES (?1, ?2) ON CONFLICT (artifact) DO UPDATE SET hash = ?2");
         defer upsert.finalize();
         try upsert.bind_text(1, artifact);
         try upsert.bind_int(2, hash);
         try upsert.exec();
+        try index.append(published_log, &.{artifact});
+        try transaction.commit();
         return false;
     }
 
