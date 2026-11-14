@@ -1,8 +1,10 @@
 const std = @import("std");
 
-/// The vendored SQLite amalgamation compiled into the module itself, so any
-/// consumer importing `publr_sqlite` gets a fully self-contained binary — no
-/// system libsqlite3, nothing to install on the target machine.
+/// The vendored SQLite amalgamation linked into the module, so any consumer
+/// importing `publr_sqlite` gets a fully self-contained binary — no system
+/// libsqlite3, nothing to install on the target machine. The C is its own
+/// library, always optimised: a Debug build of the consumer neither rebuilds it
+/// nor runs every query at -O0.
 pub fn build(b: *std.Build) *std.Build.Module {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{
@@ -15,6 +17,17 @@ pub fn build(b: *std.Build) *std.Build.Module {
         .optimize = optimize,
         .link_libc = true,
     });
+    const engine = b.addLibrary(.{
+        .name = "publr_sqlite_engine",
+        .linkage = .static,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+        }),
+    });
+
+    library.linkLibrary(engine);
 
     // The flags are part of the library's contract: THREADSAFE=0 matches the
     // one-connection-one-thread model (no mutexes compiled in at all),
@@ -22,7 +35,7 @@ pub fn build(b: *std.Build) *std.Build.Module {
     // OMIT_AUTOINIT + ENABLE_MEMSYS5 are what make `Runtime` real (explicit
     // initialize, and a fixed heap the engine can be confined to), and
     // ENABLE_FTS5 is the full-text index consumers build on.
-    library.addCSourceFile(.{
+    engine.root_module.addCSourceFile(.{
         .file = b.path("vendor/sqlite/sqlite3.c"),
         .flags = &.{
             "-DSQLITE_THREADSAFE=0",

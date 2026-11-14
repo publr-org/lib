@@ -20,6 +20,12 @@ pub fn build(b: *std.Build) *std.Build.Module {
         "Force an event backend: kqueue, epoll, poll",
     ));
 
+    options.addOption(bool, "arena_trace", b.option(
+        bool,
+        "arena-trace",
+        "In Debug, name the call sites that fill a request's arena (slow: a stack per allocation)",
+    ) orelse false);
+
     library.addOptions("build_options", options);
 
     return library;

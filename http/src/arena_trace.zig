@@ -1,12 +1,15 @@
 //! A request's arena, watched: when a request asks for more than its fixed buffer holds,
-//! the log says which request, how full the buffer was, and, in Debug builds, which call
-//! sites took the bytes, the largest first, with their stacks. Elsewhere it is the plain
-//! fixed buffer with the one summary line.
+//! the log says which request, how full the buffer was, and, in Debug builds made with
+//! `-Darena-trace`, which call sites took the bytes, the largest first, with their stacks.
+//! Elsewhere it is the plain fixed buffer with the one summary line.
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 
-/// Call sites are traced only where stacks are cheap to take and print.
-pub const traced = builtin.mode == .Debug and std.options.allow_stack_tracing;
+/// Call sites are traced only when asked for, and only where stacks can be taken and
+/// printed: a stack per allocation makes a page render many times slower.
+pub const traced = build_options.arena_trace and builtin.mode == .Debug and
+    std.options.allow_stack_tracing;
 
 const frames_max = 12;
 /// A page render alone has well over a thousand distinct call sites.
