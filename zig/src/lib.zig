@@ -6,7 +6,7 @@ const std = @import("std");
 const Io = std.Io;
 
 /// The Zig the compiler is: the one this module vendors, which is the one it is built with.
-pub const version = "0.16.0";
+pub const version = "0.17.0";
 
 /// What `wasm32` modules are built with: the compiler's own backend and linker (it carries
 /// no LLVM), compiler_rt from the toolchain (the wasm backend cannot compile it yet), no
@@ -42,7 +42,11 @@ pub fn unpack(io: Io, gpa: std.mem.Allocator, parent: []const u8) !Toolchain {
     errdefer gpa.free(compiler);
     const compiler_rt = try std.fs.path.join(gpa, &.{ root, "lib", "libcompiler_rt.a" });
 
-    return .{ .root = root, .compiler = compiler, .compiler_rt = compiler_rt };
+    return .{
+        .root = root,
+        .compiler = compiler,
+        .compiler_rt = compiler_rt,
+    };
 }
 
 /// A gzipped tar written out under `parent` as `<label>-<hash of its bytes>`, unless a folder

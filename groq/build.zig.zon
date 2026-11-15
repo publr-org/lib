@@ -2,7 +2,7 @@
     .name = .publr_groq,
     .version = "0.1.0",
     .fingerprint = 0xb9655bb5161a78c3,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         // Build-time only: supplies the amalgamation and the `docs` step. Ships
         // nothing into the library itself, so consumers of publr_groq never see it.

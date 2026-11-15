@@ -2,7 +2,7 @@
     .name = .publr_workspace,
     .version = "0.1.0",
     .fingerprint = 0x797868bfedc6ab0d,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .publr_tools = .{ .path = "tools" },
         .http_server = .{ .path = "http" },

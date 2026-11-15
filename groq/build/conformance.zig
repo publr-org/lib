@@ -7,14 +7,14 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
     const engine = b.createModule(.{
         .root_source_file = library.root_source_file,
         .target = library.resolved_target,
-        .optimize = .ReleaseSafe,
+        .optimize = .safe,
     });
     const runner = b.addExecutable(.{
         .name = "groq-conformance",
         .root_module = b.createModule(.{
             .root_source_file = b.path("conformance/run.zig"),
             .target = library.resolved_target,
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
             .imports = &.{.{
                 .name = "groq",
                 .module = engine,
@@ -23,9 +23,7 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
     });
     const run = b.addRunArtifact(runner);
 
-    if (b.args) |arguments| {
-        run.addArgs(arguments);
-    }
+    run.addPassthruArgs();
 
     const step = b.step("conformance", "Run the GROQ conformance suite: -- <suite.ndjson>");
     step.dependOn(&run.step);

@@ -5,7 +5,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) *std.Build.Module {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseSafe,
+        .preferred_optimize_mode = .safe,
     });
 
     const library = b.addModule("publr_auth", .{

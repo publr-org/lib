@@ -523,7 +523,7 @@ fn parse_frame(buffer: []u8, capacity: usize) FrameError!ParsedFrame {
     }
 
     const fin = byte0 & 0x80 != 0;
-    const opcode: Opcode = @enumFromInt(byte0 & 0x0f);
+    const opcode: Opcode = @fromBackingInt(@intCast(byte0 & 0x0f));
     const len7: u8 = byte1 & 0x7f;
 
     if (is_control(opcode) and (len7 > 125 or !fin)) {
@@ -678,7 +678,7 @@ fn close_with_code(engine: *Engine, slot: *Slot, code: u16) void {
 
 fn send_close_frame(slot: *Slot, code: u16) void {
     var frame: [4]u8 = undefined;
-    frame[0] = 0x80 | @as(u8, @intFromEnum(Opcode.close));
+    frame[0] = 0x80 | @as(u8, @backingInt(Opcode.close));
     frame[1] = 2;
     std.mem.writeInt(u16, frame[2..4], code, .big);
 
@@ -746,7 +746,7 @@ fn send(engine: *Engine, index: u32, generation: u32, opcode: Opcode, payload: [
 }
 
 fn encode_header(buf: *[10]u8, opcode: Opcode, payload_len: usize) usize {
-    buf[0] = 0x80 | @as(u8, @intFromEnum(opcode)); // FIN=1, RSV=0, no fragmentation ever sent
+    buf[0] = 0x80 | @as(u8, @backingInt(opcode)); // FIN=1, RSV=0, no fragmentation ever sent
     if (payload_len <= 125) {
         buf[1] = @intCast(payload_len);
         return 2;
@@ -941,7 +941,7 @@ const TestClient = struct {
 
     fn send_masked(client: *TestClient, opcode: Opcode, payload: []const u8) !void {
         var header: [14]u8 = undefined;
-        header[0] = 0x80 | @as(u8, @intFromEnum(opcode));
+        header[0] = 0x80 | @as(u8, @backingInt(opcode));
 
         var header_len: usize = undefined;
 
@@ -974,7 +974,7 @@ const TestClient = struct {
     } {
         const byte0 = try client.reader.interface.takeByte();
         const byte1 = try client.reader.interface.takeByte();
-        const opcode: Opcode = @enumFromInt(byte0 & 0x0f);
+        const opcode: Opcode = @fromBackingInt(@intCast(byte0 & 0x0f));
         const len7 = byte1 & 0x7f;
 
         var payload_len: usize = len7;

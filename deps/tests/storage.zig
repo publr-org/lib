@@ -69,7 +69,7 @@ test "6.5 key and artifact length limits" {
     var world: helper.World = undefined;
     try world.open(.{});
     defer world.close();
-    const too_long = "k" ** 1025;
+    const too_long = &@as([1025]u8, @splat('k'));
     try std.testing.expectError(error.NameTooLong, world.index.record(too_long, &.{"entry:1"}));
     try std.testing.expectError(error.NameTooLong, world.index.record("/a", &.{too_long}));
     try std.testing.expectError(error.NameTooLong, world.index.invalidate(&.{too_long}, 0));

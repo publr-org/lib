@@ -368,18 +368,19 @@ fn load_config(
     };
     buffer[len] = 0;
 
-    var diagnostics: std.zon.parse.Diagnostics = .{};
-    defer diagnostics.deinit(gpa);
+    // ConfigOptions holds no pointers: the parsed value outlives the arena by copy.
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
 
-    const parsed = std.zon.parse.fromSlice(
-        ConfigOptions,
-        gpa,
-        buffer[0..len :0],
-        &diagnostics,
-        .{},
-    ) catch |err| {
+    const parsed = std.zon.parse.fromSlice(ConfigOptions, .{
+        .gpa = gpa,
+        .arena = arena_state.allocator(),
+        .source = buffer[0..len :0],
+        .diagnostics = &diagnostics,
+    }) catch |err| {
         if (err == error.ParseZon) {
-            std.debug.print("http-server: config \"{s}\": {f}\n", .{ config_path, diagnostics });
+            std.debug.print("http-server: config \"{s}\": {f}\n", .{ config_path, diagnostics.fmt(config_path) });
         } else {
             std.debug.print("http-server: config \"{s}\": {s}\n", .{
                 config_path,
@@ -397,9 +398,9 @@ fn load_config(
 fn overlay(base: engine_module.Options, parsed: ConfigOptions) engine_module.Options {
     var options = base;
 
-    inline for (std.meta.fields(ConfigOptions)) |field| {
-        if (@field(parsed, field.name)) |value| {
-            @field(options, field.name) = value;
+    inline for (comptime std.meta.fieldNames(ConfigOptions)) |name| {
+        if (@field(parsed, name)) |value| {
+            @field(options, name) = value;
         }
     }
 
@@ -631,13 +632,15 @@ test "parse_flags applies typed values and toggles in any order" {
 
 test "a config file overlays the app's defaults; omitted fields keep them" {
     const source: [:0]const u8 = ".{ .port = 9090, .connections_max = 128 }";
-    const parsed = try std.zon.parse.fromSlice(
-        ConfigOptions,
-        std.testing.allocator,
-        source,
-        null,
-        .{},
-    );
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const parsed = try std.zon.parse.fromSlice(ConfigOptions, .{
+        .gpa = std.testing.allocator,
+        .arena = arena_state.allocator(),
+        .source = source,
+        .diagnostics = &diagnostics,
+    });
 
     const options = overlay(.{
         .address = .{ 127, 0, 0, 1 },

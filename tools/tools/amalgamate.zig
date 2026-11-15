@@ -163,7 +163,7 @@ const Library = struct {
             // By value: `addFile` below appends to the list and may move it.
             const file = lib.files.items[next];
             for (0..file.ast.nodes.len) |i| {
-                const node: Node.Index = @enumFromInt(i);
+                const node: Node.Index = @fromBackingInt(@intCast(i));
                 const rel = lib.importPath(&file, node) orelse continue;
                 _ = try lib.addFile(rel, false);
             }
@@ -192,8 +192,8 @@ const Library = struct {
 
         const abs = try std.fs.path.join(lib.arena, &.{ lib.root_dir, rel });
         const bytes = try std.Io.Dir.cwd().readFileAlloc(lib.io, abs, lib.arena, .limited(1 << 26));
-        const source = try lib.arena.dupeZ(u8, bytes);
-        const ast = try Ast.parse(lib.arena, source, .zig);
+        const source = try lib.arena.dupeSentinel(u8, bytes, 0);
+        const ast = try Ast.parse(lib.arena, source, .{});
         if (ast.errors.len != 0) {
             std.log.err("{s} does not parse", .{rel});
             return error.ParseFailed;
@@ -213,7 +213,7 @@ const Library = struct {
         const ast = &file.ast;
         var tests: std.ArrayList(Range) = .empty;
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             if (ast.nodeTag(node) != .test_decl) continue;
             const start, const end = nodeRange(ast, node);
             try tests.append(lib.arena, .{
@@ -230,7 +230,7 @@ const Library = struct {
             if (lib.importPath(file, init_node)) |rel| {
                 const target = lib.fileIndex(rel).?;
                 try file.import_aliases.put(lib.arena, ast.tokenSlice(var_decl.ast.mut_token + 1), target);
-                try file.alias_inits.put(lib.arena, @intFromEnum(init_node), {});
+                try file.alias_inits.put(lib.arena, @backingInt(init_node), {});
             }
         }
     }
@@ -279,14 +279,14 @@ const Library = struct {
     fn markDecl(lib: *Library, file: u32, node: Node.Index) !void {
         try lib.marked.put(lib.arena, .{
             .file = file,
-            .node = @intFromEnum(node),
+            .node = @backingInt(node),
         }, {});
     }
 
     fn isMarked(lib: *Library, file: u32, node: Node.Index) bool {
         return lib.marked.contains(.{
             .file = file,
-            .node = @intFromEnum(node),
+            .node = @backingInt(node),
         });
     }
 
@@ -436,23 +436,23 @@ const Library = struct {
         }
         var it = lib.marked.keyIterator();
         while (it.next()) |mark_key| {
-            if (mark_key.node == @intFromEnum(Node.Index.root)) continue;
-            const node: Node.Index = @enumFromInt(mark_key.node);
+            if (mark_key.node == @backingInt(Node.Index.root)) continue;
+            const node: Node.Index = @fromBackingInt(@intCast(mark_key.node));
             const top = lib.topLevelOwner(mark_key.file, node) orelse continue;
             try lib.setLive(&work, mark_key.file, top);
         }
 
         while (work.pop()) |item| {
-            try lib.referencesOf(&work, item.file, @enumFromInt(item.node));
+            try lib.referencesOf(&work, item.file, @fromBackingInt(@intCast(item.node)));
         }
     }
 
     fn setLive(lib: *Library, work: *std.ArrayList(Mark), file: u32, node: Node.Index) !void {
-        const entry = try lib.files.items[file].live.getOrPut(lib.arena, @intFromEnum(node));
+        const entry = try lib.files.items[file].live.getOrPut(lib.arena, @backingInt(node));
         if (entry.found_existing) return;
         try work.append(lib.arena, .{
             .file = file,
-            .node = @intFromEnum(node),
+            .node = @backingInt(node),
         });
     }
 
@@ -480,13 +480,13 @@ const Library = struct {
         // file has to survive.
         var accessed: std.AutoHashMapUnmanaged(u32, void) = .empty;
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             if (ast.nodeTag(node) != .field_access) continue;
-            try accessed.put(lib.arena, @intFromEnum(ast.nodeData(node).node_and_token[0]), {});
+            try accessed.put(lib.arena, @backingInt(ast.nodeData(node).node_and_token[0]), {});
         }
 
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             const token = ast.firstToken(node);
             if (token < first or token > last) continue;
 
@@ -497,7 +497,7 @@ const Library = struct {
                     // An import alias used as a value rather than through
                     // `.member` needs the whole namespace it names.
                     if (file.import_aliases.get(name)) |target_file| {
-                        if (accessed.contains(@intFromEnum(node))) continue;
+                        if (accessed.contains(@backingInt(node))) continue;
                         try lib.setWholeFileLive(work, target_file);
                     }
                 },
@@ -514,8 +514,8 @@ const Library = struct {
                     const rel = lib.importPath(file, node) orelse continue;
                     const target_file = lib.fileIndex(rel).?;
                     if (lib.files.items[target_file].is_root) file.imports_root = true;
-                    if (accessed.contains(@intFromEnum(node))) continue;
-                    if (file.alias_inits.contains(@intFromEnum(node))) continue;
+                    if (accessed.contains(@backingInt(node))) continue;
+                    if (file.alias_inits.contains(@backingInt(node))) continue;
                     try lib.setWholeFileLive(work, target_file);
                 },
             }
@@ -538,7 +538,7 @@ const Library = struct {
     }
 
     fn isLive(lib: *Library, file_index: u32, node: Node.Index) bool {
-        return lib.files.items[file_index].live.contains(@intFromEnum(node));
+        return lib.files.items[file_index].live.contains(@backingInt(node));
     }
 
     // ----------------------------------------------------------------------
@@ -580,10 +580,10 @@ const Library = struct {
             // Top-level declarations: their bare uses are qualified at emit time.
             // Member declarations of nested containers are the hard case.
             var member_nodes: std.AutoHashMapUnmanaged(u32, void) = .empty;
-            for (ast.rootDecls()) |node| try member_nodes.put(lib.arena, @intFromEnum(node), {});
+            for (ast.rootDecls()) |node| try member_nodes.put(lib.arena, @backingInt(node), {});
 
             for (0..ast.nodes.len) |i| {
-                const node: Node.Index = @enumFromInt(i);
+                const node: Node.Index = @fromBackingInt(@intCast(i));
                 if (inRanges(ast.tokenStart(ast.firstToken(node)), file.tests)) continue;
 
                 var buffer: [2]Node.Index = undefined;
@@ -592,7 +592,7 @@ const Library = struct {
                 if (!lib.isLive(@intCast(file_index), top)) continue;
 
                 for (container.ast.members) |member| {
-                    try member_nodes.put(lib.arena, @intFromEnum(member), {});
+                    try member_nodes.put(lib.arena, @backingInt(member), {});
                     const name = declName(ast, member) orelse continue;
                     if (!names.contains(name)) continue;
                     if (!lib.usedBareWithin(file, node, name)) continue;
@@ -608,7 +608,7 @@ const Library = struct {
 
             // Parameters and locals: no rewrite makes these legal.
             for (0..ast.nodes.len) |i| {
-                const node: Node.Index = @enumFromInt(i);
+                const node: Node.Index = @fromBackingInt(@intCast(i));
                 if (inRanges(ast.tokenStart(ast.firstToken(node)), file.tests)) continue;
                 const top = lib.topLevelOwner(@intCast(file_index), node) orelse continue;
                 if (!lib.isLive(@intCast(file_index), top)) continue;
@@ -628,7 +628,7 @@ const Library = struct {
                         failed = true;
                     }
                 }
-                if (member_nodes.contains(@intFromEnum(node))) continue;
+                if (member_nodes.contains(@backingInt(node))) continue;
                 if (ast.fullVarDecl(node)) |var_decl| {
                     const name = ast.tokenSlice(var_decl.ast.mut_token + 1);
                     if (!names.contains(name)) continue;
@@ -651,7 +651,7 @@ const Library = struct {
         const first = ast.firstToken(container);
         const last = ast.lastToken(container);
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             if (ast.nodeTag(node) != .identifier) continue;
             const token = ast.nodeMainToken(node);
             if (token < first or token > last) continue;
@@ -791,7 +791,7 @@ const Library = struct {
         });
 
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             const at = ast.tokenStart(ast.firstToken(node));
             if (inRanges(at, deleted.items)) continue;
 
@@ -827,7 +827,7 @@ const Library = struct {
         if (!file.is_root) {
             var visib_tokens: std.AutoHashMapUnmanaged(Ast.TokenIndex, void) = .empty;
             for (0..ast.nodes.len) |i| {
-                const node: Node.Index = @enumFromInt(i);
+                const node: Node.Index = @fromBackingInt(@intCast(i));
                 const token = visibToken(ast, node) orelse continue;
                 if (lib.isMarked(file_index, node)) continue;
                 if (ast.nodeTag(node) != .fn_decl and lib.fnProtoOfMarkedDecl(file_index, ast, node)) continue;
@@ -854,7 +854,7 @@ const Library = struct {
     /// Whether a fn_proto node belongs to a marked fn_decl.
     fn fnProtoOfMarkedDecl(lib: *Library, file_index: u32, ast: *const Ast, proto: Node.Index) bool {
         for (0..ast.nodes.len) |i| {
-            const node: Node.Index = @enumFromInt(i);
+            const node: Node.Index = @fromBackingInt(@intCast(i));
             if (ast.nodeTag(node) != .fn_decl) continue;
             if (ast.nodeData(node).node_and_node[0] != proto) continue;
             return lib.isMarked(file_index, node);
@@ -863,8 +863,8 @@ const Library = struct {
     }
 
     fn format(lib: *Library, source: []const u8) ![]const u8 {
-        const z = try lib.arena.dupeZ(u8, source);
-        var ast = try Ast.parse(lib.arena, z, .zig);
+        const z = try lib.arena.dupeSentinel(u8, source, 0);
+        var ast = try Ast.parse(lib.arena, z, .{});
         if (ast.errors.len != 0) {
             var buffer: [1024]u8 = undefined;
             var w: std.Io.Writer = .fixed(&buffer);

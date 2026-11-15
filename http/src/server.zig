@@ -61,7 +61,7 @@ fn vtable_for(comptime State: type) *const engine_module.Extension {
 /// `listen` — or hand all of that to `cli.serve`. `Context` is the third parameter
 /// of every handler; `Error` is what starting and serving can fail with.
 pub fn Server(comptime extension_modules: anytype) type {
-    const mod_fields = std.meta.fields(@TypeOf(extension_modules));
+    const mod_names = std.meta.fieldNames(@TypeOf(extension_modules));
 
     return struct {
         const App = @This();
@@ -69,16 +69,16 @@ pub fn Server(comptime extension_modules: anytype) type {
         /// One typed pointer per registered extension, named by the field names of
         /// the comptime extension set.
         const Extensions = blk: {
-            var field_names: [mod_fields.len][]const u8 = undefined;
-            var field_types: [mod_fields.len]type = undefined;
+            var field_names: [mod_names.len][]const u8 = undefined;
+            var field_types: [mod_names.len]type = undefined;
 
-            for (mod_fields, 0..) |field, index| {
-                const Module = @field(extension_modules, field.name);
-                field_names[index] = field.name;
+            for (mod_names, 0..) |name, index| {
+                const Module = @field(extension_modules, name);
+                field_names[index] = name;
                 field_types[index] = *Module.State;
             }
 
-            const attrs: [mod_fields.len]std.builtin.Type.StructField.Attributes = @splat(.{});
+            const attrs: [mod_names.len]std.builtin.Type.Struct.FieldAttributes = @splat(.{});
             break :blk @Struct(.auto, null, &field_names, &field_types, &attrs);
         };
 
@@ -121,10 +121,10 @@ pub fn Server(comptime extension_modules: anytype) type {
         pub const Error = engine_module.Error;
 
         const vtables = blk: {
-            var list: [mod_fields.len]*const engine_module.Extension = undefined;
+            var list: [mod_names.len]*const engine_module.Extension = undefined;
 
-            for (mod_fields, 0..) |field, index| {
-                list[index] = vtable_for(@field(extension_modules, field.name).State);
+            for (mod_names, 0..) |name, index| {
+                list[index] = vtable_for(@field(extension_modules, name).State);
             }
 
             const frozen = list;
@@ -181,8 +181,8 @@ pub fn Server(comptime extension_modules: anytype) type {
 
             app.engine.stream_hooks = &stream_hooks;
 
-            inline for (mod_fields, 0..) |field, index| {
-                @field(app.extension_states, field.name) =
+            inline for (mod_names, 0..) |name, index| {
+                @field(app.extension_states, name) =
                     @ptrCast(@alignCast(app.engine.registered[index].context));
             }
 
@@ -763,7 +763,7 @@ const response_log = struct {
     var lines: std.ArrayList(u8) = .empty;
 
     fn record(req: *const Request, res: *const Response) void {
-        lines.print(std.testing.allocator, "{t} {s} {d}\n", .{ req.method(), req.path(), @intFromEnum(res.status) }) catch {};
+        lines.print(std.testing.allocator, "{t} {s} {d}\n", .{ req.method(), req.path(), @backingInt(res.status) }) catch {};
     }
 };
 
@@ -922,7 +922,7 @@ test "a deep pipeline is served fairly across ticks via the pending list" {
 
     var client: harness.Client = .{
         .port = try app.engine.bound_port(),
-        .request = single ** (depth - 1) ++
+        .request = repeated(depth - 1, single) ++
             "GET /p HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n",
         .response = undefined,
     };
@@ -947,8 +947,8 @@ test "a second pipeline wave arriving while a slot is pending is served in full"
 
     var client: harness.Client = .{
         .port = try app.engine.bound_port(),
-        .request = single ** wave,
-        .request_second = single ** (wave - 1) ++
+        .request = repeated(wave, single),
+        .request_second = repeated(wave - 1, single) ++
             "GET /p HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n",
     };
 
@@ -1226,4 +1226,10 @@ test "an offline app streams a body in one piece" {
     try std.testing.expectEqual(Status.created, answered.status);
     try std.testing.expectEqualStrings("got 3", answered.body);
     try std.testing.expectEqual(@as(u32, 1), tally.finished);
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

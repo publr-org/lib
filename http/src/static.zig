@@ -325,7 +325,7 @@ test "resolve collapses duplicate slashes instead of producing empty segments" {
 
 test "resolve refuses paths that overflow the buffer" {
     var buffer: [path_len_max]u8 = undefined;
-    const long = "/x" ** (path_len_max / 2 + 2);
+    const long = repeated(path_len_max / 2 + 2, "/x");
 
     try std.testing.expectEqual(@as(?[]const u8, null), resolve(long, &buffer));
 }
@@ -344,4 +344,10 @@ test "svg is detected by extension, case-insensitively, and not a false match" {
     try std.testing.expect(is_svg("drawing.SVG"));
     try std.testing.expect(!is_svg("assets/logo.png"));
     try std.testing.expect(!is_svg("assets/svg"));
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

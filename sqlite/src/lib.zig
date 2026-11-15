@@ -350,7 +350,7 @@ pub const Database = struct {
     ///
     /// ```zig
     /// var path_buffer: [1024]u8 = undefined;
-    /// const path = try std.fmt.bufPrintZ(&path_buffer, "{s}", .{flag_value});
+    /// const path = try std.fmt.bufPrintSentinel(&path_buffer, "{s}", .{flag_value}, 0);
     /// var db = try Database.open(&runtime, path, .{ .busy_timeout_ms = 5_000 });
     /// ```
     ///
@@ -985,14 +985,14 @@ pub const Statement = struct {
     /// The struct's field count must match the query's column count —
     /// asserted, so a SELECT and its struct cannot drift apart silently.
     pub fn read(stmt: *Statement, comptime Row: type, arena: std.mem.Allocator) Error!Row {
-        const fields = @typeInfo(Row).@"struct".fields;
-        comptime std.debug.assert(fields.len > 0);
-        std.debug.assert(fields.len == @as(usize, @intCast(sqlite3_column_count(stmt.handle))));
+        const info = @typeInfo(Row).@"struct";
+        comptime std.debug.assert(info.field_names.len > 0);
+        std.debug.assert(info.field_names.len == @as(usize, @intCast(sqlite3_column_count(stmt.handle))));
 
         var row_value: Row = undefined;
 
-        inline for (fields, 0..) |field, column| {
-            @field(row_value, field.name) = try stmt.read_cell(field.type, column, arena);
+        inline for (info.field_names, info.field_types, 0..) |name, Cell, column| {
+            @field(row_value, name) = try stmt.read_cell(Cell, column, arena);
         }
 
         return row_value;

@@ -335,12 +335,12 @@ fn invoke(id: i32, name: [:0]const u8, params: []const u32, problem: *Problem) E
     );
 
     switch (status) {
-        @intFromEnum(Status.ok) => {
+        @backingInt(Status.ok) => {
             problem.len = 0;
             return result;
         },
-        @intFromEnum(Status.not_found) => return error.NotFound,
-        @intFromEnum(Status.exhausted) => return error.Exhausted,
+        @backingInt(Status.not_found) => return error.NotFound,
+        @backingInt(Status.exhausted) => return error.Exhausted,
         else => return error.Trap,
     }
 }
@@ -459,6 +459,12 @@ fn shape_of(signature: []const u8) Shape {
 }
 
 test "signatures read as WAMR reads them" {
-    try std.testing.expectEqual(Shape{ .params = 5, .answers = true }, shape_of("(iiiii)i"));
-    try std.testing.expectEqual(Shape{ .params = 2, .answers = false }, shape_of("(ii)"));
+    try std.testing.expectEqual(Shape{
+        .params = 5,
+        .answers = true,
+    }, shape_of("(iiiii)i"));
+    try std.testing.expectEqual(Shape{
+        .params = 2,
+        .answers = false,
+    }, shape_of("(ii)"));
 }

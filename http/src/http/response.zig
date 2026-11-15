@@ -465,7 +465,7 @@ test "size limits: long names, long values, oversized bodies" {
     var arena_state = std.heap.FixedBufferAllocator.init(&buffer);
     var response = init(arena_state.allocator());
 
-    const long_name = [_]u8{'a'} ** (header_name_len_max + 1);
+    const long_name: [header_name_len_max + 1]u8 = @splat('a');
     try std.testing.expectError(error.HeaderTooLarge, response.set_header(&long_name, "v"));
 
     const long_value = try std.testing.allocator.alloc(u8, header_value_len_max + 1);

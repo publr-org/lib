@@ -48,9 +48,7 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
         const run_step = b.step(example.step, example.description);
         const run_command = b.addRunArtifact(exe);
 
-        if (b.args) |args| {
-            run_command.addArgs(args);
-        }
+        run_command.addPassthruArgs();
 
         run_step.dependOn(&run_command.step);
     }

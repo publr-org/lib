@@ -129,7 +129,7 @@ pub fn partial_compare(left: Value, right: Value) ?Order {
 }
 
 fn order_of(order: std.math.Order) Order {
-    std.debug.assert(@intFromEnum(order) <= 2);
+    std.debug.assert(@backingInt(order) <= 2);
 
     return switch (order) {
         .lt => .less,

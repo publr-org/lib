@@ -19,7 +19,10 @@ test "the toolchain unpacks once and builds a module that needs compiler_rt" {
 
     try std.testing.expectEqualStrings(toolchain.root, again.root);
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "guest.zig", .data = @embedFile("guest.zig") });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "guest.zig",
+        .data = @embedFile("guest.zig"),
+    });
 
     const source = try std.fs.path.join(gpa, &.{ parent, "guest.zig" });
     defer gpa.free(source);
@@ -31,13 +34,15 @@ test "the toolchain unpacks once and builds a module that needs compiler_rt" {
     defer gpa.free(cache);
 
     const argv = [_][]const u8{
-        toolchain.compiler,    "build-exe",      source,
-        toolchain.compiler_rt, "-target",        "wasm32-freestanding",
-        "-rdynamic",           "-OReleaseSmall", emit,
-        "--cache-dir",         cache,            "--global-cache-dir",
+        toolchain.compiler,    "build-exe", source,
+        toolchain.compiler_rt, "-target",   "wasm32-freestanding",
+        "-rdynamic",           "-Osmall",   emit,
+        "--cache-dir",         cache,       "--global-cache-dir",
         cache,
     } ++ publr_zig.wasm_flags;
-    const result = try std.process.run(gpa, io, .{ .argv = &argv });
+    const result = try std.process.run(gpa, io, .{
+        .argv = &argv,
+    });
     defer gpa.free(result.stdout);
     defer gpa.free(result.stderr);
 

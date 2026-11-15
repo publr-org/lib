@@ -2,7 +2,7 @@
     .name = .publr_wasm,
     .version = "0.1.0",
     .fingerprint = 0x56a1011869c2a80,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",

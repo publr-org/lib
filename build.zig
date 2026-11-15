@@ -76,7 +76,7 @@ pub fn build(b: *std.Build) void {
     serve.addArg("--root");
     serve.addDirectoryArg(site);
     serve.addArgs(&.{ "--response-bytes-max", "8388608", "--port", "8100" });
-    if (b.args) |args| serve.addArgs(args);
+    serve.addPassthruArgs();
 
     b.step("serve", "Serve the docs of every library at http://127.0.0.1:8100").dependOn(&serve.step);
 
@@ -90,11 +90,9 @@ fn add_tidy(b: *std.Build) void {
     const tidy = b.addExecutable(.{
         .name = "tidy",
         .root_module = b.createModule(.{
-            .root_source_file = .{
-                .cwd_relative = b.pathFromRoot("../publr/scripts/tidy.zig"),
-            },
+            .root_source_file = b.path("../publr/scripts/tidy.zig"),
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const run = b.addRunArtifact(tidy);

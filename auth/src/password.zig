@@ -154,7 +154,7 @@ test "password length bounds" {
     const short = hash("1234567", params_test, std.testing.allocator, std.testing.io, &out);
     try std.testing.expectError(error.WeakPassword, short);
 
-    const long = "x" ** (len_max + 1);
+    const long = &@as([len_max + 1]u8, @splat('x'));
     const too_long = hash(long, params_test, std.testing.allocator, std.testing.io, &out);
     try std.testing.expectError(error.WeakPassword, too_long);
 

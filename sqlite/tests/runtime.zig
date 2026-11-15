@@ -140,7 +140,7 @@ fn temporary_path(
     temporary: *const std.testing.TmpDir,
     name: []const u8,
 ) ![:0]u8 {
-    return std.fmt.bufPrintZ(buffer, ".zig-cache/tmp/{s}/{s}", .{ &temporary.sub_path, name });
+    return std.fmt.bufPrintSentinel(buffer, ".zig-cache/tmp/{s}/{s}", .{ &temporary.sub_path, name }, 0);
 }
 
 test "limit_work stops a statement past its budget, the same way every run" {

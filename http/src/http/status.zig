@@ -74,7 +74,7 @@ pub const Status = enum(u16) {
 
     /// The numeric code, for logging and comparisons.
     pub fn code(status: Status) u16 {
-        return @intFromEnum(status);
+        return @backingInt(status);
     }
 };
 

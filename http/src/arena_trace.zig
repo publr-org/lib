@@ -8,7 +8,7 @@ const build_options = @import("build_options");
 
 /// Call sites are traced only when asked for, and only where stacks can be taken and
 /// printed: a stack per allocation makes a page render many times slower.
-pub const traced = build_options.arena_trace and builtin.mode == .Debug and
+pub const traced = build_options.arena_trace and builtin.mode == .debug and
     std.options.allow_stack_tracing;
 
 const frames_max = 12;

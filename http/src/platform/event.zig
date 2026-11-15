@@ -341,8 +341,8 @@ pub const Loop = struct {
                 ignore_signal(libc.SIG.INT);
                 ignore_signal(libc.SIG.TERM);
 
-                const sigint = @intFromEnum(libc.SIG.INT);
-                const sigterm = @intFromEnum(libc.SIG.TERM);
+                const sigint = @backingInt(libc.SIG.INT);
+                const sigterm = @backingInt(libc.SIG.TERM);
                 var changes = [2]libc.Kevent{
                     kqueue_change(sigint, libc.EVFILT.SIGNAL, libc.EV.ADD, token_signal),
                     kqueue_change(sigterm, libc.EVFILT.SIGNAL, libc.EV.ADD, token_signal),
@@ -638,7 +638,7 @@ fn kqueue_change(ident: anytype, filter: i16, flags: u16, token: u64) libc.Keven
 }
 
 fn ignore_signal(signal: libc.SIG) void {
-    std.debug.assert(@intFromEnum(signal) > 0);
+    std.debug.assert(@backingInt(signal) > 0);
 
     const action: libc.Sigaction = .{
         .handler = .{

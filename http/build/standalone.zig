@@ -23,9 +23,7 @@ pub fn build(b: *std.Build, library: *std.Build.Module) void {
     const serve_step = b.step("serve", "Run the standalone file server");
     const serve_command = b.addRunArtifact(exe);
 
-    if (b.args) |args| {
-        serve_command.addArgs(args);
-    }
+    serve_command.addPassthruArgs();
 
     serve_step.dependOn(&serve_command.step);
 }

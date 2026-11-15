@@ -519,7 +519,7 @@ test "a pattern needing more than params_max captures does not match" {
 
 test "a pattern deeper than segments_max does not match" {
     var params: Params = .{};
-    const deep = "/x" ** (segments_max + 1);
+    const deep = repeated(segments_max + 1, "/x");
 
     try std.testing.expect(!match(deep, deep, &params));
 }
@@ -632,4 +632,10 @@ test "the first matching route in registration order wins" {
 
     try dispatch(&router, &request, &response, &ctx);
     try std.testing.expectEqualStrings("static", response.body);
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

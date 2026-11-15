@@ -353,7 +353,7 @@ fn parse_method(text: []const u8) ?Method {
         .{ "OPTIONS", .options },
     };
 
-    std.debug.assert(table.len == @typeInfo(Method).@"enum".fields.len);
+    std.debug.assert(table.len == @typeInfo(Method).@"enum".field_names.len);
 
     for (table) |entry| {
         if (std.mem.eql(u8, entry[0], text)) {
@@ -366,7 +366,7 @@ fn parse_method(text: []const u8) ?Method {
 
 fn parse_version(text: []const u8) ?Version {
     std.debug.assert(text.len <= request_line_bytes_max);
-    std.debug.assert(@typeInfo(Version).@"enum".fields.len == 2);
+    std.debug.assert(@typeInfo(Version).@"enum".field_names.len == 2);
 
     if (std.mem.eql(u8, text, "HTTP/1.1")) {
         return .http_1_1;

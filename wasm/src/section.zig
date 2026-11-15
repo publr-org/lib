@@ -166,12 +166,12 @@ test "a custom section written after a module is found again, others are skipped
     // A type section with one `() -> ()` function type, so a known section is skipped.
     try writer.writeAll(&.{ 1, 4, 1, 0x60, 0, 0 });
     try write(&writer, "other", "ignored");
-    try write(&writer, "publr", "{\"name\":\"hello\"}" ** 10);
+    try write(&writer, "publr", repeated(10, "{\"name\":\"hello\"}"));
 
     const module = writer.buffered();
     const payload = (try find(module, "publr")).?;
 
-    try std.testing.expectEqualStrings("{\"name\":\"hello\"}" ** 10, payload);
+    try std.testing.expectEqualStrings(repeated(10, "{\"name\":\"hello\"}"), payload);
     try std.testing.expectEqualStrings("ignored", (try find(module, "other")).?);
     try std.testing.expect(try find(module, "missing") == null);
 }
@@ -203,4 +203,10 @@ test "leb128 lengths: one byte up to 127, two from 128" {
     try std.testing.expectEqual(@as(u32, 1), leb_len(127));
     try std.testing.expectEqual(@as(u32, 300), try read_leb(writer.buffered(), &offset));
     try std.testing.expectEqual(@as(u32, 2), offset);
+}
+
+/// `text` written `count` times over.
+inline fn repeated(comptime count: u32, comptime text: []const u8) *const [count * text.len]u8 {
+    const copies: [count][text.len]u8 = @splat(text[0..text.len].*);
+    return @ptrCast(&copies);
 }

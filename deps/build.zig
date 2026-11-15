@@ -7,12 +7,12 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseSafe,
+        .preferred_optimize_mode = .safe,
     });
 
     const sqlite = b.dependency("publr_sqlite", .{
         .target = target,
-        .release = optimize != .Debug,
+        .release = optimize != .debug,
     });
 
     const library = b.addModule("publr_deps", .{

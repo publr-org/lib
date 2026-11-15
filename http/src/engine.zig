@@ -43,7 +43,7 @@ const scan_interval_ms: u32 = 500;
 const fd_margin: u32 = 64;
 
 /// Debug builds serve this machine only; release builds serve all interfaces.
-const address_default: [4]u8 = if (@import("builtin").mode == .Debug)
+const address_default: [4]u8 = if (@import("builtin").mode == .debug)
     .{ 127, 0, 0, 1 }
 else
     .{ 0, 0, 0, 0 };

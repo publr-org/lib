@@ -53,7 +53,7 @@ zig build serve -- --root ./public
 
 The bind address is decided at compile time: a debug build (what `zig build` produces)
 binds `127.0.0.1` — private to your machine, no firewall prompts — while a release
-build (`-Doptimize=ReleaseSafe`, what you deploy or download) binds `0.0.0.0` and is
+build (`-Doptimize=safe`, what you deploy or download) binds `0.0.0.0` and is
 reachable out of the box. `--address` overrides either way; the startup banner always
 prints what was bound.
 

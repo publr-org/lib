@@ -83,7 +83,7 @@ test "2.8 a replaced set is atomic under failure" {
     defer world.close();
     try world.index.record("/a", &.{"entry:1"});
 
-    const too_long = "x" ** 1025;
+    const too_long = &@as([1025]u8, @splat('x'));
     try std.testing.expectError(error.NameTooLong, world.index.record("/a", &.{ "entry:2", too_long }));
     try world.expect_affected(&.{"entry:1"}, &.{"/a"});
     try world.expect_affected(&.{"entry:2"}, &.{});
