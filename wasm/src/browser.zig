@@ -222,6 +222,8 @@ pub const Module = struct {
 
 pub const Instance = struct {
     env: *Env,
+    /// Not counted in the browser, which keeps no budget.
+    instructions_used: u64 = 0,
 
     pub const Options = struct {
         stack_bytes: u32 = 64 << 10,
@@ -270,6 +272,13 @@ pub const Instance = struct {
         return .{
             .env = env,
         };
+    }
+
+    /// Not read in the browser.
+    pub fn memory_pages(instance: *const Instance) u32 {
+        std.debug.assert(instance.env.id > 0);
+
+        return 0;
     }
 
     pub fn deinit(instance: *Instance) void {

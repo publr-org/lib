@@ -7673,8 +7673,16 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
             else
 #endif
             {
+#if WASM_ENABLE_INSTRUCTION_METERING != 0
+                /* Publr: what the native function calls back into this
+                   instance counts against the same budget. */
+                exec_env->instructions_to_execute = instructions_left;
+#endif
                 wasm_interp_call_func_native(module, exec_env, cur_func,
                                              prev_frame);
+#if WASM_ENABLE_INSTRUCTION_METERING != 0
+                instructions_left = exec_env->instructions_to_execute;
+#endif
             }
 
 #if WASM_ENABLE_TAIL_CALL != 0 || WASM_ENABLE_GC != 0
@@ -7787,9 +7795,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         FREE_FRAME(exec_env, frame);
         wasm_exec_env_set_cur_frame(exec_env, (WASMRuntimeFrame *)prev_frame);
 
-        if (!prev_frame->ip)
+        if (!prev_frame->ip) {
             /* Called from native. */
+#if WASM_ENABLE_INSTRUCTION_METERING != 0
+            /* Publr: the caller reads what is left of the budget. */
+            exec_env->instructions_to_execute = instructions_left;
+#endif
             return;
+        }
 
         RECOVER_CONTEXT(prev_frame);
 #if WASM_ENABLE_GC != 0
@@ -7815,6 +7828,10 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
 
     got_exception:
         SYNC_ALL_TO_FRAME();
+#if WASM_ENABLE_INSTRUCTION_METERING != 0
+        /* Publr: the caller reads what is left of the budget. */
+        exec_env->instructions_to_execute = instructions_left;
+#endif
         return;
 
 #if WASM_ENABLE_LABELS_AS_VALUES == 0

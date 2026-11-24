@@ -43,7 +43,13 @@ no signal handler is installed in the host.
 `*Env` first; `Env.read(offset, target)` and `Env.write(offset, source)` copy between the
 guest's memory and the host's, false when any of it is outside (`Instance.read`/`write`
 outside a call). `Env.bytes(offset, len)` answers the guest's memory itself, natively only. `Env.call` calls another export from inside a host function, within the same
-budget. `Env.user_data` answers what the host passed to `Instance.call`.
+budget, as does an `Instance.call` made while a call into the instance has not returned. `Env.user_data` answers what the host passed to `Instance.call`.
+
+**What a call cost.** `Instance.instructions_used` adds up the instructions every call into
+the instance executed, work nested in host functions included: the budget less what the
+interpreter left as each outermost call returned (`src/metering.c` reads it; WAMR exports
+only the setter). `Instance.memory_pages()` is the linear memory now, which never shrinks.
+A host reads both to say what a module cost; neither is counted in the browser.
 
 **A handful of errors.** `Load` (not a module, or it imports what the host does not
 give), `Instantiate`, `Trap`, `Exhausted`, `NotFound` (no such export), `OutOfMemory`;
@@ -55,9 +61,20 @@ name, `section.write` appends one: what a host inspects before it runs anything.
 
 **Vendored, and the flags are part of the contract.** `vendor/wamr/` is WAMR 2.4.5,
 the files the interpreter needs, as released (Apache-2.0 WITH LLVM-exception,
-`vendor/wamr/LICENSE`). It is compiled with the fast interpreter only: no AOT, no JIT,
+`vendor/wamr/LICENSE`), with one change of ours, below. It is compiled with the fast interpreter only: no AOT, no JIT,
 no WASI, no threads; reference types and bulk memory, which toolchains emit by default;
 instruction metering; software bounds checks. macOS and Linux, on aarch64 and x86_64.
+
+**One change to the vendored interpreter.** As released, WAMR reads the instruction limit
+into a local when the interpreter is entered and never writes it back, so a call a host
+function makes into the same instance starts on the whole budget again, and the outer call
+goes on with its own count: nested work is not counted. `wasm_interp_fast.c` here hands
+what is left to the execution environment before a host function runs, takes it back
+after, and writes it when the interpreter returns (three places, each marked `Publr:`).
+A call nested in a host function then counts against the outer call's budget, which
+`Instance.call` sets only for the outermost call. When WAMR is imported again, carry the
+change over; `tests/root.zig` ("work nested in a host function counts against the outer
+call's budget") fails without it.
 
 **In the browser.** Built for `wasm32` (a host that is itself WebAssembly in a page), the
 same API runs each module on the browser's WebAssembly through the page's functions in
@@ -72,5 +89,5 @@ zig build test
 ```
 
 Integration tests run a real module, `tests/guest.zig`, built for `wasm32-freestanding`
-by the test build: calls, host functions and their user data, nested calls, the budget,
-traps, the memory ceiling, refused bytes.
+by the test build: calls, host functions and their user data, nested calls, the budget
+(nested work included), traps, the memory ceiling, refused bytes.

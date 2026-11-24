@@ -33,6 +33,14 @@ fn host_nested(env: *wasm.Env) callconv(.c) i32 {
     return @intCast(sum);
 }
 
+fn host_spin(env: *wasm.Env, rounds: u32) callconv(.c) i32 {
+    var problem: wasm.Problem = .{};
+
+    _ = env.call("spin", &.{rounds}, &problem) catch return -1;
+
+    return 0;
+}
+
 const imports = [_]wasm.Import{
     .{
         .name = "host_echo",
@@ -43,6 +51,11 @@ const imports = [_]wasm.Import{
         .name = "host_nested",
         .signature = "()i",
         .function = &host_nested,
+    },
+    .{
+        .name = "host_spin",
+        .signature = "(i)i",
+        .function = &host_spin,
     },
 };
 
@@ -130,6 +143,67 @@ test "a call over its instruction budget stops as exhausted and the instance ans
     try std.testing.expect(fixture.problem.len > 0);
     _ = try fixture.call("spin", &.{10});
     try std.testing.expectEqual(@as(u32, 3), try fixture.call("add", &.{ 1, 2 }));
+}
+
+test "work nested in a host function counts against the outer call's budget" {
+    var fixture: Fixture = undefined;
+    try fixture.init(pages_max);
+    defer fixture.deinit();
+
+    // What one spin costs: the smallest budget it completes on.
+    const rounds: u32 = 10_000;
+    var low: u31 = 1;
+    var high: u31 = 1_000_000;
+
+    while (low < high) {
+        const middle = low + (high - low) / 2;
+
+        if (fixture.instance.call("spin", &.{rounds}, middle, &fixture.problem, .{})) |_| {
+            high = middle;
+        } else |_| {
+            low = middle + 1;
+        }
+    }
+
+    // Three spins (before, nested in the host function, after) need three times that.
+    const cost = low;
+    const short = fixture.instance.call("spin_nested", &.{rounds}, cost * 2 + 64, &fixture.problem, .{});
+
+    try std.testing.expect(cost > rounds / 2);
+    try std.testing.expectError(error.Exhausted, short);
+    _ = try fixture.instance.call("spin_nested", &.{rounds}, cost * 3 + 64, &fixture.problem, .{});
+    // The next outermost call starts on a whole budget again.
+    _ = try fixture.instance.call("spin", &.{rounds}, cost, &fixture.problem, .{});
+}
+
+test "an instance says how many instructions its calls executed, nested ones included" {
+    var fixture: Fixture = undefined;
+    try fixture.init(pages_max);
+    defer fixture.deinit();
+
+    const rounds: u32 = 10_000;
+
+    try std.testing.expectEqual(@as(u64, 0), fixture.instance.instructions_used);
+    _ = try fixture.instance.call("spin", &.{rounds}, 1_000_000, &fixture.problem, .{});
+
+    const one = fixture.instance.instructions_used;
+
+    try std.testing.expect(one > rounds / 2);
+    try std.testing.expect(one < 1_000_000);
+    _ = try fixture.instance.call("spin_nested", &.{rounds}, 4_000_000, &fixture.problem, .{});
+
+    const nested = fixture.instance.instructions_used - one;
+
+    // Three spins, and the few instructions around them.
+    try std.testing.expect(nested >= one * 3);
+    try std.testing.expect(nested < one * 3 + 256);
+
+    // A call that runs out used its whole budget.
+    const short = fixture.instance.call("spin", &.{rounds}, 100, &fixture.problem, .{});
+
+    try std.testing.expectError(error.Exhausted, short);
+    try std.testing.expectEqual(one + nested + 100, fixture.instance.instructions_used);
+    try std.testing.expect(fixture.instance.memory_pages() > 0);
 }
 
 test "a trap is an error with WAMR's reason, never a crash" {

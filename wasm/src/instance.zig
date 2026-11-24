@@ -75,6 +75,11 @@ pub const Env = opaque {
 pub const Instance = struct {
     handle: *InstanceHandle,
     env: *Env,
+    /// Calls into the instance that have not returned: more than one while a call nests.
+    running: u32 = 0,
+    /// Instructions every call into the instance has executed so far, nested ones included:
+    /// what a host reads to say what a plugin cost. Added as each outermost call returns.
+    instructions_used: u64 = 0,
 
     pub const Options = struct {
         /// The interpreter's operand and frame stack.
@@ -160,20 +165,32 @@ pub const Instance = struct {
         std.debug.assert(instructions_max > 0);
 
         // A call made while the guest is inside one of its own host calls (a plugin's write
-        // that runs its own hook) nests: it counts against the outer call's instructions,
+        // that runs its own hook) nests: it counts against the outer call's instructions
+        // (the interpreter hands what is left across the host function and takes it back),
         // and the outer call's data comes back when it returns.
         const outer = abi.wasm_runtime_get_user_data(instance.env);
+        const outermost = instance.running == 0;
 
         abi.wasm_runtime_set_user_data(instance.env, options.user_data);
         defer abi.wasm_runtime_set_user_data(instance.env, outer);
 
-        if (outer == null) {
+        if (outermost) {
             abi.wasm_runtime_set_instruction_count_limit(instance.env, instructions_max);
         }
 
-        defer if (outer == null) {
-            abi.wasm_runtime_set_instruction_count_limit(instance.env, -1);
-        };
+        instance.running += 1;
+        defer {
+            instance.running -= 1;
+
+            if (outermost) {
+                const left = abi.publr_wasm_instructions_left(instance.env);
+
+                instance.instructions_used += instructions_max - @as(u31, @intCast(
+                    std.math.clamp(left, 0, instructions_max),
+                ));
+                abi.wasm_runtime_set_instruction_count_limit(instance.env, -1);
+            }
+        }
 
         return invoke(instance.env, instance.handle, name, params, problem);
     }
@@ -182,6 +199,14 @@ pub const Instance = struct {
         std.debug.assert(@intFromPtr(instance.handle) != 0);
 
         return memory_slice(instance.handle, offset, len);
+    }
+
+    /// The instance's linear memory now, in 64 KiB pages. It never shrinks, so this is also
+    /// the most it has held.
+    pub fn memory_pages(instance: *const Instance) u32 {
+        std.debug.assert(@intFromPtr(instance.handle) != 0);
+
+        return @intCast(pages_of(instance.handle));
     }
 
     /// As `Env.read`, outside a call.

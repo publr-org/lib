@@ -35,7 +35,7 @@ const builtin = @import("builtin");
 
 pub const section = @import("section.zig");
 
-pub const imports_max: u32 = 16;
+pub const imports_max: u32 = 32;
 pub const params_max: u32 = 8;
 pub const problem_len_max: u32 = 256;
 /// The smallest pool `Runtime.init` accepts: WAMR's own bookkeeping, modules and stacks.

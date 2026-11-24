@@ -59,6 +59,11 @@ fn add_runtime(b: *std.Build, library: *std.Build.Module, target: std.Target) vo
         });
     }
 
+    // Ours: reads what the vendored headers keep private, so the vendored sources stay as they are.
+    library.addCSourceFile(.{
+        .file = b.path("src/metering.c"),
+        .flags = flags,
+    });
     library.addCSourceFile(.{
         .file = b.path(b.fmt(root ++ "shared/platform/{s}/platform_init.c", .{platform})),
         .flags = flags,

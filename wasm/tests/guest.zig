@@ -1,6 +1,7 @@
 //! The module the integration tests load: one export per behaviour the binding promises.
 extern "env" fn host_echo(ptr: [*]const u8, len: u32) i32;
 extern "env" fn host_nested() i32;
+extern "env" fn host_spin(rounds: u32) i32;
 
 export fn add(left: i32, right: i32) i32 {
     return left + right;
@@ -26,6 +27,13 @@ export fn spin(rounds: u32) u32 {
     }
 
     return total;
+}
+
+export fn spin_nested(rounds: u32) i32 {
+    const outside = spin(rounds);
+    const inside = host_spin(rounds);
+
+    return if (inside < 0) inside else @intCast((outside +% spin(rounds)) & 0xffff);
 }
 
 export fn grow(pages: u32) i32 {

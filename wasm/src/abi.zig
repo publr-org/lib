@@ -82,6 +82,8 @@ pub extern fn wasm_runtime_clear_exception(instance: *InstanceHandle) void;
 pub extern fn wasm_runtime_set_user_data(env: *Env, user_data: ?*anyopaque) void;
 pub extern fn wasm_runtime_get_user_data(env: *Env) ?*anyopaque;
 pub extern fn wasm_runtime_set_instruction_count_limit(env: *Env, count: c_int) void;
+/// Ours (`metering.c`): what is left of the limit set, as the interpreter last wrote it.
+pub extern fn publr_wasm_instructions_left(env: *Env) c_int;
 pub extern fn wasm_runtime_get_default_memory(instance: *InstanceHandle) ?*MemoryHandle;
 pub extern fn wasm_memory_get_base_address(memory: *MemoryHandle) ?[*]u8;
 pub extern fn wasm_memory_get_cur_page_count(memory: *MemoryHandle) u64;
