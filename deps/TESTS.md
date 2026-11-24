@@ -219,6 +219,32 @@ refused      batch_no, key, count, limit    fan-out exceeded, nothing executed
 | 8.6 | batches are distinguishable | cap 2; 4 keys fast | events for batch 1 and batch 2 interleave nowhere: sealed₁, planned₁, executed₁…, sealed₂, planned₂, … |
 | 8.7 | the observer sees what the API would say | any round | for every `planned` event, its per-key lists equal `affected({key})` asked directly at that moment |
 
+## 9. Values kept fresh — `note(value, keys, made)`, `fresh(value, asked)`
+
+A value the caller works out and stores itself (a computed field of a record),
+checked when it is read instead of rebuilt in a batch. A write costs the same
+however many values read its keys: nothing is marked, the change log already
+holds the change. `fresh` asks whether any key the value read changed after the
+revision it was noted at. The caller reads `revision()` before the work begins,
+so a change made while it runs is never missed. A value may also hold only until
+a time (`until_ms`), and is made under a stamp the caller chooses (the code and
+modifiers that worked it out): asked for under another, it is stale. Values are
+a second kind of name beside artifacts: no plan names them, `affected` never does.
+
+| # | name | setup | action | expect |
+|---|---|---|---|---|
+| 9.1 | never noted | — | `fresh(v)` | false |
+| 9.2 | fresh until a key changes | `v`→{p:7, tax}, noted | `invalidate({p:8})`, then `invalidate({tax})` | fresh, then not |
+| 9.3 | change during the work | revision read, `invalidate({p:7})`, then `note(v, {p:7}, revision)` | `fresh(v)` | false |
+| 9.4 | noting again replaces | `v`→{p:7}, `p:7` changed, noted again →{p:9} | `invalidate({p:7})` | still fresh |
+| 9.5 | older than the log | `replay_max = 2`, `v` noted, three changes | `fresh(v)` | fresh after two, not after three |
+| 9.6 | not an artifact | `v` and `/cart` read `tax` | `affected({tax})`, a flush | only `/cart`; `v` not fresh |
+| 9.7 | forgotten | `v` noted | `forget_value(v)` | not fresh |
+| 9.8 | rolled back | `note` inside a rolled-back transaction | `fresh(v)` | false |
+| 9.9 | its keys | `v`→{p:7, tax} | `value_keys(v)` | {p:7, tax}, sorted; none before it is noted |
+| 9.10 | holds until a time | `v` noted `until_ms = 1000` | `fresh(v)` at 999, at 1000 | fresh, then not |
+| 9.11 | another stamp | `v` noted under a stamp | `fresh(v)` under it, under another | fresh, then not |
+
 ## The safety property, stated once
 
 The plan is a correct over-approximation: it may include artifacts a change

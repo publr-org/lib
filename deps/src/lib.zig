@@ -117,6 +117,18 @@ const schema =
     \\    key TEXT PRIMARY KEY,
     \\    batch INTEGER NOT NULL DEFAULT 0
     \\) WITHOUT ROWID;
+    \\CREATE INDEX IF NOT EXISTS deps_changes_by_key ON deps_changes (key, revision);
+    \\CREATE TABLE IF NOT EXISTS deps_values (
+    \\    value TEXT PRIMARY KEY,
+    \\    revision INTEGER NOT NULL,
+    \\    until_ms INTEGER,
+    \\    stamp INTEGER NOT NULL DEFAULT 0
+    \\) WITHOUT ROWID;
+    \\CREATE TABLE IF NOT EXISTS deps_value_keys (
+    \\    value TEXT NOT NULL,
+    \\    key TEXT NOT NULL,
+    \\    PRIMARY KEY (value, key)
+    \\) WITHOUT ROWID;
     \\CREATE TABLE IF NOT EXISTS deps_meta (
     \\    name TEXT PRIMARY KEY,
     \\    value INTEGER NOT NULL
@@ -271,6 +283,140 @@ pub const Index = struct {
             .reset = found.reset,
             .keys = found.entries,
         };
+    }
+
+    // ---- values kept fresh ----------------------------------------------------
+
+    /// What a value was worked out under, besides the keys it read.
+    pub const Made = struct {
+        /// What `revision()` answered before the work began, so a change made while it ran
+        /// leaves the value stale, never fresh.
+        at: u64,
+        /// When the value stops holding whatever else happens (a sale ends), in the
+        /// caller's milliseconds; null when only its keys say.
+        until_ms: ?i64 = null,
+        /// Anything else the caller says the value was made under (the code that worked
+        /// it out, the modifiers it went through), as one number: a value asked for under
+        /// another stamp is not fresh.
+        stamp: u64 = 0,
+    };
+
+    /// When a value is asked for: now, and the stamp it should have been made under.
+    pub const Asked = struct {
+        now_ms: i64,
+        stamp: u64 = 0,
+    };
+
+    /// A value worked out and stored by the caller read exactly `keys`, under `made`.
+    /// Replaces what it read before. Values are not artifacts: no batch plans them and
+    /// `affected` never names them.
+    pub fn note(index: *Index, value: []const u8, keys: []const []const u8, made: Made) Error!void {
+        try index.check_name(value);
+        for (keys) |key| try index.check_name(key);
+
+        var transaction = try index.db.transaction();
+        defer transaction.rollback();
+
+        var remove = try index.db.prepare("DELETE FROM deps_value_keys WHERE value = ?1");
+        defer remove.finalize();
+        try remove.bind_text(1, value);
+        try remove.exec();
+
+        var insert = try index.db.prepare("INSERT OR IGNORE INTO deps_value_keys (value, key) VALUES (?1, ?2)");
+        defer insert.finalize();
+        for (keys) |key| {
+            insert.reset();
+            try insert.bind_text(1, value);
+            try insert.bind_text(2, key);
+            try insert.exec();
+        }
+
+        var upsert = try index.db.prepare("INSERT INTO deps_values (value, revision, until_ms, stamp) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (value) DO UPDATE SET revision = ?2, until_ms = ?3, stamp = ?4");
+        defer upsert.finalize();
+        try upsert.bind_text(1, value);
+        try upsert.bind_int(2, @intCast(made.at));
+        if (made.until_ms) |until| try upsert.bind_int(3, until) else try upsert.bind_null(3);
+        try upsert.bind_int(4, @bitCast(made.stamp));
+        try upsert.exec();
+
+        try transaction.commit();
+    }
+
+    /// Whether `value` is as its keys are now: noted under the stamp asked for, still
+    /// holding at `now_ms`, and none of its keys changed after the revision it was noted
+    /// at. A value noted before the oldest revision the log still holds is not fresh: what
+    /// changed in between is no longer known. Two indexed queries, however many values
+    /// read the same keys.
+    pub fn fresh(index: *Index, value: []const u8, asked: Asked) Error!bool {
+        try index.check_name(value);
+
+        var select = try index.db.prepare("SELECT revision, until_ms, stamp FROM deps_values WHERE value = ?1");
+        defer select.finalize();
+        try select.bind_text(1, value);
+        if (!try select.step()) return false;
+        // Numbers only: nothing is allocated reading them.
+        var nothing: [64]u8 = undefined;
+        var fixed = std.heap.FixedBufferAllocator.init(&nothing);
+        const row = try select.read(struct {
+            revision: i64,
+            until_ms: ?i64,
+            stamp: i64,
+        }, fixed.allocator());
+        const at: u64 = @intCast(row.revision);
+        if (@as(u64, @bitCast(row.stamp)) != asked.stamp) return false;
+        if (row.until_ms) |until| {
+            if (asked.now_ms >= until) return false;
+        }
+        if (at < try index.floor_of(key_log)) return false;
+
+        var changed = try index.db.prepare(
+            "SELECT 1 FROM deps_value_keys k JOIN deps_changes c ON c.key = k.key " ++
+                "WHERE k.value = ?1 AND c.revision > ?2 LIMIT 1",
+        );
+        defer changed.finalize();
+        try changed.bind_text(1, value);
+        try changed.bind_int(2, @intCast(at));
+        return !try changed.step();
+    }
+
+    /// The keys `value` read when it was last noted, sorted, duped into `arena`: what a
+    /// build that reads the stored value depends on through it. None for a value never
+    /// noted.
+    pub fn value_keys(index: *Index, arena: std.mem.Allocator, value: []const u8) Error![]const []const u8 {
+        try index.check_name(value);
+
+        var select = try index.db.prepare("SELECT key FROM deps_value_keys WHERE value = ?1 ORDER BY key");
+        defer select.finalize();
+        try select.bind_text(1, value);
+
+        var keys: std.ArrayList([]const u8) = .empty;
+        while (try select.step()) {
+            const row = try select.read(struct {
+                key: []const u8,
+            }, arena);
+            try keys.append(arena, row.key);
+        }
+        return keys.toOwnedSlice(arena);
+    }
+
+    /// The value is gone: what it read and the revision it was noted at.
+    pub fn forget_value(index: *Index, value: []const u8) Error!void {
+        try index.check_name(value);
+
+        var transaction = try index.db.transaction();
+        defer transaction.rollback();
+
+        var keys = try index.db.prepare("DELETE FROM deps_value_keys WHERE value = ?1");
+        defer keys.finalize();
+        try keys.bind_text(1, value);
+        try keys.exec();
+
+        var values = try index.db.prepare("DELETE FROM deps_values WHERE value = ?1");
+        defer values.finalize();
+        try values.bind_text(1, value);
+        try values.exec();
+
+        try transaction.commit();
     }
 
     // ---- what was published ---------------------------------------------------

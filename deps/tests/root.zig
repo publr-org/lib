@@ -15,4 +15,5 @@ test {
     _ = @import("limits_and_hashing.zig");
     _ = @import("storage.zig");
     _ = @import("observer.zig");
+    _ = @import("values.zig");
 }
