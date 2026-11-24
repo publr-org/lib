@@ -61,6 +61,19 @@ pub const Sites = struct {
     }
 };
 
+/// The bytes a request's arena holds now: null when `allocator` is not an `Arena`'s.
+pub fn used_of(allocator: std.mem.Allocator) ?u64 {
+    if (allocator.vtable.alloc != &Arena.alloc) {
+        return null;
+    }
+
+    const arena: *const Arena = @ptrCast(@alignCast(allocator.ptr));
+
+    std.debug.assert(arena.fixed.end_index <= arena.fixed.buffer.len);
+
+    return arena.fixed.end_index;
+}
+
 pub const Arena = struct {
     fixed: std.heap.FixedBufferAllocator,
     sites: Sites,

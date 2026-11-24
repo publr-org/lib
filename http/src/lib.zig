@@ -111,6 +111,8 @@ pub const cli = @import("cli.zig");
 pub const process = @import("process.zig");
 /// Static file serving from any handler.
 pub const static = @import("static.zig");
+/// What a request's arena holds now, when `arena` is one this server made; else null.
+pub const arena_used = @import("arena_trace.zig").used_of;
 /// A urlencoded form body decoded into pairs read by name; also the query-string
 /// and percent decoders.
 pub const Form = @import("form.zig").Form;
