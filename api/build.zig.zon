@@ -1,0 +1,13 @@
+.{
+    .name = .publr_api,
+    .version = "0.1.0",
+    .fingerprint = 0xd33d772422e28f00,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}
