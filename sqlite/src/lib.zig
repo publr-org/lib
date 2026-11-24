@@ -67,6 +67,7 @@ const type_null: c_int = 5; // SQLITE_NULL
 
 // Flags and options, from sqlite3.h.
 const config_heap: c_int = 8; // SQLITE_CONFIG_HEAP
+const config_memstatus: c_int = 9; // SQLITE_CONFIG_MEMSTATUS
 const open_readonly: c_int = 0x1; // SQLITE_OPEN_READONLY
 const open_readwrite: c_int = 0x2; // SQLITE_OPEN_READWRITE
 const open_create: c_int = 0x4; // SQLITE_OPEN_CREATE
@@ -144,6 +145,8 @@ extern fn sqlite3_column_int64(stmt: ?*StmtHandle, column: c_int) i64;
 extern fn sqlite3_column_double(stmt: ?*StmtHandle, column: c_int) f64;
 extern fn sqlite3_finalize(stmt: ?*StmtHandle) c_int;
 extern fn sqlite3_changes(db: ?*DbHandle) c_int;
+extern fn sqlite3_get_autocommit(db: ?*DbHandle) c_int;
+extern fn sqlite3_memory_highwater(reset: c_int) i64;
 extern fn sqlite3_last_insert_rowid(db: ?*DbHandle) i64;
 extern fn sqlite3_serialize(
     db: ?*DbHandle,
@@ -253,12 +256,24 @@ pub const Runtime = struct {
         /// The smallest allocation the fixed heap hands out; SQLite rounds
         /// every request up to a multiple of it.
         heap_alloc_min: u32 = 8,
+        /// Count the memory the engine holds (`memory_peak`): off unless asked, as it costs
+        /// a little on every allocation.
+        count_memory: bool = false,
     };
 
     /// Configures and initializes the engine. Fails with `error.Sqlite` if
     /// SQLite refuses — in practice only when it was already initialized by
     /// another `Runtime` in the same process, which is a caller bug.
     pub fn init(options: Options) Error!Runtime {
+        if (options.count_memory) {
+            const counted = sqlite3_config(config_memstatus, @as(c_int, 1));
+
+            if (counted != ok) {
+                log_failure("sqlite: cannot count memory (code {d})", .{counted});
+                return error.Sqlite;
+            }
+        }
+
         if (options.heap) |heap| {
             std.debug.assert(heap.len >= heap_bytes_min);
             std.debug.assert(std.math.isPowerOfTwo(heap.len));
@@ -585,6 +600,12 @@ pub const Database = struct {
     /// ```
     pub fn changes(db: *Database) u32 {
         return @intCast(sqlite3_changes(db.handle));
+    }
+
+    /// Whether the connection is outside any transaction: none was begun, or SQLite ended
+    /// one itself (it rolls a transaction back whole when it runs out of memory).
+    pub fn outside_transaction(db: *Database) bool {
+        return sqlite3_get_autocommit(db.handle) != 0;
     }
 
     /// The rowid of the most recent successful INSERT on this connection —
@@ -1160,4 +1181,14 @@ fn stop_working(context: ?*anyopaque) callconv(.c) c_int {
     std.debug.assert(context == null);
 
     return 1;
+}
+
+/// The most memory the engine held at once since the last reset, in bytes: from its fixed
+/// heap when it has one. `reset` starts the count again from what it holds now.
+pub fn memory_peak(reset: bool) u64 {
+    const peak = sqlite3_memory_highwater(@intFromBool(reset));
+
+    std.debug.assert(peak >= 0);
+
+    return @intCast(peak);
 }

@@ -149,6 +149,14 @@ pub const Transaction = struct {
         std.debug.assert(transaction.depth == transaction.db.transaction_depth);
         std.debug.assert(transaction.depth >= 1);
 
+        // SQLite already rolled the whole transaction back (out of memory, a full disk):
+        // its savepoints are gone, and there is nothing left to undo at any depth.
+        if (transaction.db.outside_transaction()) {
+            transaction.finish();
+
+            return;
+        }
+
         if (transaction.depth == 1) {
             transaction.db.exec("ROLLBACK") catch |err| rollback_failed(err);
         } else {
