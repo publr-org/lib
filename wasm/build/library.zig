@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) *std.Build.Module {
 
     if (!in_browser) {
         add_runtime(b, library, target.result);
+        with_sdk(b, library, target);
     }
 
     return library;
@@ -180,3 +181,19 @@ const common_flags = [_][]const u8{
     // The fast interpreter stores pointers unaligned on purpose.
     "-fno-sanitize=alignment",
 };
+
+/// A Mac build for a stated macOS (`aarch64-macos.15.0`, so it opens on that and later, not
+/// only on the build machine's) is not native to Zig, which then leaves out the SDK that
+/// WAMR's darwin headers include (`sys/timeb.h`): its headers are added from Xcode's.
+fn with_sdk(b: *std.Build, library: *std.Build.Module, target: std.Build.ResolvedTarget) void {
+    std.debug.assert(target.result.cpu.arch != .wasm32);
+
+    if (target.result.os.tag != .macos or target.query.isNativeOs()) {
+        return;
+    }
+
+    const sdk = std.zig.system.darwin.getSdk(b.allocator, b.graph.io, &target.result) orelse
+        @panic("publr_wasm: the macOS SDK was not found: install Xcode or its command line tools");
+
+    library.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "usr/include" }) });
+}
