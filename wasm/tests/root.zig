@@ -251,3 +251,23 @@ test "bytes that are not a module are refused with a reason" {
     try std.testing.expectError(error.Load, wasm.Module.load(&runtime, &junk, &problem));
     try std.testing.expect(problem.len > 0);
 }
+
+test "a module importing a function the host does not give is refused at load, naming it" {
+    const heap = try std.testing.allocator.alloc(u8, heap_bytes);
+    defer std.testing.allocator.free(heap);
+
+    var runtime: wasm.Runtime = undefined;
+    try runtime.init(heap, &imports, .{});
+    defer runtime.deinit();
+
+    // (module (type (func)) (import "env" "publr_gone" (func (type 0))))
+    var asking = ("\x00asm\x01\x00\x00\x00" ++ "\x01\x04\x01\x60\x00\x00" ++
+        "\x02\x12\x01\x03env\x0apublr_gone\x00\x00").*;
+    var problem: wasm.Problem = .{};
+
+    try std.testing.expectError(error.Load, wasm.Module.load(&runtime, &asking, &problem));
+    try std.testing.expectEqualStrings(
+        "it imports env.publr_gone, which this Publr does not give",
+        problem.text(),
+    );
+}

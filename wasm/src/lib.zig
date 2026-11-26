@@ -95,6 +95,23 @@ pub const Problem = struct {
     pub fn set_c(problem: *Problem, message: [*:0]const u8) void {
         problem.set(std.mem.span(message));
     }
+
+    /// "it imports env.publr_frame, which this Publr does not give".
+    fn set_unlinked(problem: *Problem, import: abi.ImportType) void {
+        std.debug.assert(import.kind == abi.import_kind_function);
+        std.debug.assert(!import.linked);
+
+        const module_name = if (import.module_name) |name| std.mem.span(name) else "";
+        const name = if (import.name) |given| std.mem.span(given) else "";
+        var buffer: [problem_len_max]u8 = undefined;
+        const message = std.fmt.bufPrint(
+            &buffer,
+            "it imports {s}.{s}, which this Publr does not give",
+            .{ module_name, name },
+        ) catch buffer[0..problem_len_max];
+
+        problem.set(message);
+    }
 };
 
 /// A function the host gives every module: `name` in the import module `env`, WAMR's
@@ -184,9 +201,39 @@ pub const NativeModule = struct {
             return error.Load;
         };
 
+        // WAMR loads a module whose imports are not all given and traps only when one is
+        // called; refused here instead, naming the first.
+        if (unlinked(handle)) |import| {
+            abi.wasm_runtime_unload(handle);
+            problem.set_unlinked(import);
+            return error.Load;
+        }
+
         return .{
             .handle = handle,
         };
+    }
+
+    /// The first function the module imports that the runtime does not give.
+    fn unlinked(handle: *abi.ModuleHandle) ?abi.ImportType {
+        const count = abi.wasm_runtime_get_import_count(handle);
+
+        std.debug.assert(count >= -1);
+
+        var index: i32 = 0;
+
+        while (index < count) : (index += 1) {
+            var import = std.mem.zeroes(abi.ImportType);
+
+            abi.wasm_runtime_get_import_type(handle, index, &import);
+
+            if (import.kind == abi.import_kind_function and !import.linked) {
+                std.debug.assert(import.name != null);
+                return import;
+            }
+        }
+
+        return null;
     }
 
     pub fn unload(module: *NativeModule) void {

@@ -61,6 +61,21 @@ pub extern fn wasm_runtime_load(
     error_buf_size: u32,
 ) ?*ModuleHandle;
 pub extern fn wasm_runtime_unload(module: *ModuleHandle) void;
+/// `wasm_import_t`; `kind` is `wasm_import_export_kind_t`, functions first.
+pub const ImportType = extern struct {
+    module_name: ?[*:0]const u8,
+    name: ?[*:0]const u8,
+    kind: c_int,
+    linked: bool,
+    type: ?*anyopaque,
+};
+pub const import_kind_function: c_int = 0;
+pub extern fn wasm_runtime_get_import_count(module: *ModuleHandle) i32;
+pub extern fn wasm_runtime_get_import_type(
+    module: *ModuleHandle,
+    index: i32,
+    import: *ImportType,
+) void;
 pub extern fn wasm_runtime_instantiation_args_create(args: *?*ArgsHandle) bool;
 pub extern fn wasm_runtime_instantiation_args_destroy(args: *ArgsHandle) void;
 pub extern fn wasm_runtime_instantiation_args_set_default_stack_size(args: *ArgsHandle, size: u32) void;
