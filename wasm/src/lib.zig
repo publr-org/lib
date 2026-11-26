@@ -34,6 +34,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub const section = @import("section.zig");
+pub const names = @import("names.zig");
 
 pub const imports_max: u32 = 32;
 pub const params_max: u32 = 8;

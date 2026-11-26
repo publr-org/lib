@@ -18,44 +18,94 @@ pub fn find(bytes: []const u8, name: []const u8) ParseError!?[]const u8 {
     std.debug.assert(name.len > 0);
     std.debug.assert(name.len <= name_len_max);
 
-    if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], magic)) {
-        return error.Malformed;
-    }
+    var sections = try Sections.of(bytes);
 
-    if (!std.mem.eql(u8, bytes[4..8], version)) {
-        return error.Malformed;
-    }
-
-    var offset: u32 = 8;
-    var count: u32 = 0;
-
-    while (offset < bytes.len) : (count += 1) {
-        if (count == sections_max) {
-            return error.Malformed;
-        }
-
-        const id = bytes[offset];
-        offset += 1;
-
-        const size = try read_leb(bytes, &offset);
-
-        if (size > bytes.len - offset) {
-            return error.Malformed;
-        }
-
-        const body = bytes[offset .. offset + size];
-        offset += size;
-
-        if (id == custom_id) {
-            if (try custom_payload(body, name)) |payload| {
+    while (try sections.next()) |section| {
+        if (section.id == custom_id) {
+            if (try custom_payload(section.body, name)) |payload| {
                 return payload;
             }
         }
     }
 
-    std.debug.assert(offset == bytes.len);
+    return null;
+}
+
+/// The body of the module's section `id` (2 imports, 7 exports, …), or null without one.
+pub fn body_of(bytes: []const u8, id: u8) ParseError!?[]const u8 {
+    std.debug.assert(id != custom_id);
+
+    var sections = try Sections.of(bytes);
+
+    while (try sections.next()) |section| {
+        if (section.id == id) {
+            return section.body;
+        }
+    }
 
     return null;
+}
+
+/// A module's sections in order, each checked to lie within it.
+const Sections = struct {
+    bytes: []const u8,
+    offset: u32 = 8,
+    count: u32 = 0,
+
+    const Section = struct {
+        id: u8,
+        body: []const u8,
+    };
+
+    fn of(bytes: []const u8) ParseError!Sections {
+        if (bytes.len < 8 or !std.mem.eql(u8, bytes[0..4], magic)) {
+            return error.Malformed;
+        }
+
+        if (!std.mem.eql(u8, bytes[4..8], version)) {
+            return error.Malformed;
+        }
+
+        return .{
+            .bytes = bytes,
+        };
+    }
+
+    fn next(sections: *Sections) ParseError!?Section {
+        std.debug.assert(sections.offset <= sections.bytes.len);
+
+        if (sections.offset == sections.bytes.len) {
+            return null;
+        }
+
+        if (sections.count == sections_max) {
+            return error.Malformed;
+        }
+
+        sections.count += 1;
+
+        const id = sections.bytes[sections.offset];
+        sections.offset += 1;
+
+        const size = try read_leb(sections.bytes, &sections.offset);
+
+        if (size > sections.bytes.len - sections.offset) {
+            return error.Malformed;
+        }
+
+        const body = sections.bytes[sections.offset .. sections.offset + size];
+        sections.offset += size;
+
+        return .{
+            .id = id,
+            .body = body,
+        };
+    }
+};
+
+/// The unsigned LEB128 number at `offset` in `bytes`, moving `offset` past it.
+pub fn read_number(bytes: []const u8, offset: *u32) ParseError!u32 {
+    return read_leb(bytes, offset);
 }
 
 fn custom_payload(body: []const u8, name: []const u8) ParseError!?[]const u8 {
