@@ -859,7 +859,7 @@ test "serves pipelined keep-alive requests and echoes bodies" {
     try std.testing.expectEqual(@as(u64, 2), app.engine.counters.requests_total);
 }
 
-test "pool exhaustion sheds load with a 503 instead of a silent drop" {
+test "with every connection taken, the next one waits and is served once one frees" {
     var app = try test_app(1);
     defer app.deinit();
 
@@ -879,19 +879,76 @@ test "pool exhaustion sheds load with a 503 instead of a silent drop" {
     try harness.serve_until(&app, 10);
     try std.testing.expectEqual(@as(u32, 1), app.engine.active());
 
-    var refused: harness.Client = .{
+    var waiting: harness.Client = .{
         .port = port,
-        .request = "GET /y HTTP/1.1\r\nHost: h\r\n\r\n",
+        .request = "GET /y HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n",
     };
-    const thread = try std.Thread.spawn(.{}, harness.Client.run, .{&refused});
+    const thread = try std.Thread.spawn(.{}, harness.Client.run, .{&waiting});
 
     harness.sleep_ms(50);
+    try harness.serve_until(&app, 10);
+    try std.testing.expectEqual(@as(u64, 1), app.engine.counters.paused_total);
+    try std.testing.expectEqual(@as(u32, 0), waiting.response_len);
+
+    try holder_writer.interface.writeAll("Host: h\r\nConnection: close\r\n\r\n");
+    try holder_writer.interface.flush();
     try harness.serve_until(&app, 50);
     thread.join();
 
-    const output = refused.response[0..refused.response_len];
-    try std.testing.expect(std.mem.startsWith(u8, output, "HTTP/1.1 503"));
-    try std.testing.expectEqual(@as(u64, 1), app.engine.counters.refused_total);
+    const output = waiting.response[0..waiting.response_len];
+    try std.testing.expect(!waiting.failed);
+    try std.testing.expect(std.mem.startsWith(u8, output, "HTTP/1.1 200"));
+    try std.testing.expectEqual(@as(u64, 2), app.engine.counters.requests_total);
+}
+
+test "a large body waits for a body buffer while another holds the only one" {
+    var options = harness.options(4);
+
+    options.request_bytes_max = 64 << 10;
+    options.response_bytes_max = 64 << 10;
+    options.bodies_max = 1;
+
+    var app = try TestApp.init(std.testing.allocator, options);
+    defer app.deinit();
+
+    app.router().post("/echo", &testing_routes.echo);
+
+    const body_bytes = 20 << 10;
+    const head = "POST /echo HTTP/1.1\r\nHost: h\r\nConnection: close\r\n" ++
+        "Content-Length: 20480\r\n\r\n";
+    const body: [body_bytes]u8 = @splat('b');
+    const port = try app.engine.bound_port();
+
+    // The first sends half its body, pauses, then the rest: it holds the body buffer.
+    var slow: harness.Client = .{
+        .port = port,
+        .request = head ++ body[0 .. body_bytes / 2],
+        .request_second = body[body_bytes / 2 ..],
+    };
+    const slow_thread = try std.Thread.spawn(.{}, harness.Client.run, .{&slow});
+
+    harness.sleep_ms(30);
+    try harness.serve_until(&app, 3);
+
+    var quick: harness.Client = .{
+        .port = port,
+        .request = head ++ body,
+    };
+    const quick_thread = try std.Thread.spawn(.{}, harness.Client.run, .{&quick});
+
+    try harness.serve_until(&app, 100);
+    slow_thread.join();
+    quick_thread.join();
+
+    try std.testing.expect(!slow.failed and !quick.failed);
+    const slow_output = slow.response[0..slow.response_len];
+    const quick_output = quick.response[0..quick.response_len];
+
+    try std.testing.expect(std.mem.startsWith(u8, slow_output, "HTTP/1.1 200"));
+    try std.testing.expect(std.mem.startsWith(u8, quick_output, "HTTP/1.1 200"));
+    try std.testing.expect(std.mem.endsWith(u8, quick_output, "bbbb"));
+    try std.testing.expect(app.engine.counters.waited_total >= 1);
+    try std.testing.expectEqual(@as(u32, 1), app.engine.bodies.available());
 }
 
 test "malformed request gets a 400-class response and the connection closes" {

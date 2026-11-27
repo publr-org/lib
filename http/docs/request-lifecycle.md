@@ -31,8 +31,9 @@ flowchart LR
    Windows or via `-Devent-backend`) reports which connections are ready. Each event
    carries a token; `engine.zig: tick` decodes it into a slot (a generation counter
    rejects events for closed-and-reused slots) and routes by slot state.
-2. `connection.zig: service_reading` calls `recv` until the kernel is drained or the
-   slot's fixed read buffer is full.
+2. `connection.zig: service_reading` borrows a head buffer if the slot has none and calls
+   `recv` until the kernel is drained or the buffer is full. A body that does not fit
+   beside its head moves into a borrowed body buffer (`lending.zig`).
 3. `request.zig: parse` runs on the buffered bytes. Complete head + fully buffered body
    yields a `Request`; incomplete means wait for more bytes; malformed gets an error
    response and the connection closes.
@@ -41,9 +42,10 @@ flowchart LR
    `Request`, builds the typed `Context` (app state, arena, extensions), and dispatches
    through the app's router — method + pattern match, middleware, then the route handler
    (or the 404 handler).
-5. `response.zig: write_to` serializes the response into the slot's write buffer, and
-   `flush` sends it. Usually this completes inline; only when the kernel's send buffer
-   is full does the slot wait for a writable event to finish.
+5. `response.zig: write_to` serializes the response into a response buffer the slot
+   borrowed before the handler ran, and `flush` sends it. Usually this completes inline
+   and the buffer goes straight back; only when the kernel's send buffer is full does the
+   slot keep it and wait for a writable event to finish.
 6. On keep-alive the slot goes back to reading with an idle deadline; on
    `Connection: close`, error, or shutdown, the slot is recycled.
 
@@ -71,7 +73,9 @@ its generation.
 
 There is no request queue object. Waiting work lives in four bounded places, each with
 a defined overflow behavior: the kernel listen backlog (overflow: connect refused), the
-kernel receive buffer (overflow: TCP backpressure), the slot read buffer (overflow:
-431/413 and close), and the pending mark for slots whose pipeline budget ran out this
-tick (bounded by the slot count). When all slots are taken, new connects get a
-best-effort 503 and are closed. One flooding client can only fill its own buffers.
+kernel receive buffer (overflow: TCP backpressure), the head or body buffer a slot
+borrowed (overflow: 431/413 and close), the pending mark for slots whose pipeline budget
+ran out this tick (bounded by the slot count), and the lines of slots waiting for a body
+or response buffer to come back (bounded by the slot count). When all slots are taken,
+the listener is not read and new connects wait in the backlog until a slot frees. One
+flooding client can only fill its own buffers.

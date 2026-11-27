@@ -78,7 +78,8 @@ fn linux_signal_handler(sig: linux.SIG) callconv(.c) void {
 
 pub const Error = error{ EventInitFailed, EventChangeFailed, EventWaitFailed, OutOfMemory };
 
-pub const Interest = enum { read, write };
+/// What a connection is watched for: `none` while it waits for a buffer to be lent.
+pub const Interest = enum { read, write, none };
 
 pub const token_listener: u64 = std.math.maxInt(u64);
 pub const token_signal: u64 = std.math.maxInt(u64) - 1;
@@ -252,9 +253,45 @@ pub const Loop = struct {
                 try loop.kqueue_submit(&changes);
             },
             .epoll => {
-                const mask: u32 = if (interest == .read) linux.EPOLL.IN else linux.EPOLL.OUT;
+                const mask: u32 = switch (interest) {
+                    .read => linux.EPOLL.IN,
+                    .write => linux.EPOLL.OUT,
+                    .none => 0,
+                };
                 try loop.epoll_control(linux.EPOLL.CTL_MOD, fd, mask, token);
             },
+            .poll => unreachable,
+        }
+    }
+
+    /// Stops (`watched` false) or resumes reporting the listener: while every connection is
+    /// taken, new ones wait in the kernel's queue instead of being accepted.
+    pub fn watch_listener(loop: *Loop, fd: socket.Fd, watched: bool) Error!void {
+        std.debug.assert(fd != socket.invalid);
+
+        switch (backend) {
+            .poll => {
+                const registration = loop.poll_find(fd) orelse return error.EventChangeFailed;
+                registration.interest = if (watched) .read else .none;
+                return;
+            },
+            else => {},
+        }
+
+        switch (backend) {
+            .kqueue => {
+                const flags: u16 = if (watched) libc.EV.ENABLE else libc.EV.DISABLE;
+                var changes = [1]libc.Kevent{
+                    kqueue_change(fd, libc.EVFILT.READ, flags, token_listener),
+                };
+                try loop.kqueue_submit(&changes);
+            },
+            .epoll => try loop.epoll_control(
+                linux.EPOLL.CTL_MOD,
+                fd,
+                if (watched) linux.EPOLL.IN else 0,
+                token_listener,
+            ),
             .poll => unreachable,
         }
     }
@@ -392,7 +429,11 @@ pub const Loop = struct {
         for (loop.registrations[0..active], loop.poll_fds[0..active]) |registration, *entry| {
             entry.* = .{
                 .fd = registration.fd,
-                .events = if (registration.interest == .read) poll_in else poll_out,
+                .events = switch (registration.interest) {
+                    .read => poll_in,
+                    .write => poll_out,
+                    .none => 0,
+                },
                 .revents = 0,
             };
         }

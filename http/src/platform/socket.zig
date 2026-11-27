@@ -25,6 +25,7 @@ pub const close = impl.close;
 pub const bound_port = impl.bound_port;
 pub const peer_address = impl.peer_address;
 pub const ensure_file_limit = impl.ensure_file_limit;
+pub const file_limit_max = impl.file_limit_max;
 pub const effective_backlog_cap = impl.effective_backlog_cap;
 pub const monotonic_ms = impl.monotonic_ms;
 pub const read_small_file = impl.read_small_file;

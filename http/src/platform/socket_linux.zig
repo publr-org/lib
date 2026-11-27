@@ -199,6 +199,20 @@ pub fn peer_address(fd: Fd) ?[4]u8 {
     return @bitCast(storage.addr);
 }
 
+/// The most open files this process may ever have (the hard limit): what `ensure_file_limit` can
+/// raise the soft limit to.
+pub fn file_limit_max() u64 {
+    var limit: linux.rlimit = undefined;
+
+    if (linux.errno(linux.getrlimit(.NOFILE, &limit)) != .SUCCESS) {
+        return std.math.maxInt(u64);
+    }
+
+    std.debug.assert(limit.cur <= limit.max);
+
+    return limit.max;
+}
+
 pub fn ensure_file_limit(files_needed: u64) Error!void {
     std.debug.assert(files_needed > 0);
     std.debug.assert(files_needed < 1 << 24);

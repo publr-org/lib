@@ -10,6 +10,7 @@ const socket = @import("platform/socket.zig");
 const request_module = @import("http/request.zig");
 const response_module = @import("http/response.zig");
 const engine_module = @import("engine.zig");
+const lending = @import("lending.zig");
 const status_module = @import("http/status.zig");
 const Status = status_module.Status;
 
@@ -19,6 +20,10 @@ const Slot = engine_module.Slot;
 
 pub fn service_reading(server: *Engine, slot: *Slot) void {
     std.debug.assert(slot.state == .reading);
+    std.debug.assert(slot.waiting == .none);
+
+    lending.ensure_head(server, slot);
+
     std.debug.assert(slot.read_len <= slot.read_buffer.len);
 
     while (slot.read_len < slot.read_buffer.len) {
@@ -48,6 +53,7 @@ pub fn process_requests(server: *Engine, slot: *Slot) void {
     std.debug.assert(server.pending_total <= server.slots.len);
 
     clear_pending(server, slot);
+    defer lending.settle_read(server, slot);
 
     var handled: u32 = 0;
 
@@ -57,6 +63,10 @@ pub fn process_requests(server: *Engine, slot: *Slot) void {
             .closed, .streamed => return,
             .ready => |request| {
                 std.debug.assert(slot.state == .reading);
+
+                if (!lending.ensure_response(server, slot)) {
+                    return;
+                }
 
                 slot.served += 1;
                 server.counters.requests_total += 1;
@@ -105,6 +115,16 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
     std.debug.assert(slot.state == .reading);
     std.debug.assert(slot.read_len <= slot.read_buffer.len);
 
+    // Everything read is answered: its buffer may already be back in the pool.
+    if (slot.read_len == 0) {
+        if (slot.peer_closed) {
+            close_slot(server, slot);
+            return .closed;
+        }
+
+        return .wait;
+    }
+
     const parsed = request_module.parse(slot.read_buffer[0..slot.read_len]) catch |err| {
         respond_error(server, slot, request_module.status_for(err));
         return .closed;
@@ -131,6 +151,11 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
 
     if (request.content_length > 0) {
         if (server.stream_hooks) |hooks| {
+            // A streamed route answers or streams from here: it needs its response buffer.
+            if (!lending.ensure_response(server, slot)) {
+                return .wait;
+            }
+
             slot.served += 1;
 
             switch (hooks.head(server, slot, &request)) {
@@ -150,9 +175,13 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
 
     const total: u64 = @as(u64, request.head_len) + request.content_length;
 
-    if (total > slot.read_buffer.len) {
+    if (total > server.options.request_bytes_max) {
         respond_error(server, slot, .payload_too_large);
         return .closed;
+    }
+
+    if (total > slot.read_buffer.len and !lending.grow_to_body(server, slot)) {
+        return .wait;
     }
 
     if (slot.read_len < total) {
@@ -160,6 +189,9 @@ fn next_request(server: *Engine, slot: *Slot) NextRequest {
             close_slot(server, slot);
             return .closed;
         }
+
+        // The body is still coming: nothing is answered meanwhile.
+        lending.give_write(server, slot);
 
         return .wait;
     }
@@ -252,6 +284,7 @@ pub fn respond_error(server: *Engine, slot: *Slot, status: Status) void {
 
     response.keep_alive = false;
     response.text(status, status_module.reason(status)) catch return close_slot(server, slot);
+    lending.use_error_text(server, slot);
 
     var writer: std.Io.Writer = .fixed(slot.write_buffer);
     response_module.write_to(&response, &writer, .{}) catch return close_slot(server, slot);
@@ -317,6 +350,7 @@ fn flush(server: *Engine, slot: *Slot, kind: FlushKind) void {
         std.debug.assert(slot.owner < server.registered_len);
 
         const extension = server.registered[slot.owner].extension;
+        lending.upgrade(server, slot);
         slot.upgrading = false;
         slot.state = .upgraded;
         slot.deadline_ms = engine_module.now_ms() + server.options.idle_timeout_ms;
@@ -332,7 +366,9 @@ fn flush(server: *Engine, slot: *Slot, kind: FlushKind) void {
         return close_slot(server, slot);
     }
 
+    lending.give_write(server, slot);
     slot.state = .reading;
+    lending.settle_read(server, slot);
 
     const grace_ms = if (slot.read_len > 0)
         server.options.request_timeout_ms
@@ -355,6 +391,7 @@ pub fn close_slot(server: *Engine, slot: *Slot) void {
     std.debug.assert(server.free_count < server.slots.len);
 
     clear_pending(server, slot);
+    lending.give_all(server, slot);
 
     if (slot.stream_state != null) {
         server.stream_hooks.?.abort(server, slot);
@@ -378,4 +415,5 @@ pub fn close_slot(server: *Engine, slot: *Slot) void {
     server.free_count += 1;
 
     server.counters.active = server.active();
+    server.slot_freed();
 }

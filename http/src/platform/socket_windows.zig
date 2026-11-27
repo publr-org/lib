@@ -294,6 +294,11 @@ pub fn peer_address(fd: Fd) ?[4]u8 {
     return null;
 }
 
+/// Windows has no open-file limit of this kind.
+pub fn file_limit_max() u64 {
+    return std.math.maxInt(u64);
+}
+
 pub fn ensure_file_limit(files_needed: u64) Error!void {
     std.debug.assert(files_needed > 0);
 }

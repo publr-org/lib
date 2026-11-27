@@ -149,6 +149,8 @@ test {
     _ = @import("server.zig");
     _ = @import("engine.zig");
     _ = @import("connection.zig");
+    _ = @import("pool.zig");
+    _ = @import("lending.zig");
     _ = @import("http/router.zig");
     _ = @import("http/request.zig");
     _ = @import("http/response.zig");

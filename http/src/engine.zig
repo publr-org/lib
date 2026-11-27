@@ -23,6 +23,8 @@ const socket = @import("platform/socket.zig");
 const request_module = @import("http/request.zig");
 const connection = @import("connection.zig");
 const arena_trace = @import("arena_trace.zig");
+const pool_module = @import("pool.zig");
+const lending = @import("lending.zig");
 
 const connections_limit: u32 = 1 << 18;
 /// After this many requests on one keep-alive connection the engine answers the next
@@ -48,10 +50,6 @@ const address_default: [4]u8 = if (@import("builtin").mode == .debug)
 else
     .{ 0, 0, 0, 0 };
 
-const refused_response = "HTTP/1.1 503 Service Unavailable\r\n" ++
-    "Content-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\nContent-Length: 19\r\n" ++
-    "Retry-After: 1\r\nConnection: close\r\n\r\nservice unavailable";
-
 /// The single configuration surface: the same struct whether filled from code, from a
 /// .zon config file (which parses directly into it), or from CLI flags. Buffer sizes,
 /// backlog, and event-loop internals are derived from these, never set directly.
@@ -65,18 +63,30 @@ pub const Options = struct {
     /// TCP port to listen on. `0` asks the kernel for an ephemeral port, which is
     /// how this library's own tests avoid colliding.
     port: u16 = 8080,
-    /// Concurrent connection slots, allocated up front and never grown. A client
-    /// arriving when every slot is busy gets a 503 with `Retry-After: 1` and its
-    /// connection closed — load is shed, never queued. Also sizes the listen
-    /// backlog and the open-file limit `init` asks the OS for.
+    /// Connections open at once, each a slot allocated up front. A slot owns no buffers:
+    /// it borrows them from the pools below while it reads or sends, so an idle
+    /// keep-alive connection costs only its slot. When every slot is taken the listener
+    /// is not read until one frees, and new connections wait in the kernel's queue
+    /// (counted in `Counters.paused_total`). Also sizes the listen backlog and the
+    /// open-file limit `init` asks the OS for.
     connections_max: u32 = 4096,
-    /// Caps one request, head plus body; sized as each slot's read buffer. A
-    /// request whose head alone exceeds it gets 431, one whose declared body
-    /// would exceed it gets 413.
+    /// Caps one request, head plus body. A head is read into a head buffer of
+    /// `request_module.head_bytes_max`; a request whose head exceeds it gets 431. A
+    /// body that does not fit beside its head is moved into a body buffer of this size;
+    /// one whose declared length would exceed it gets 413.
     request_bytes_max: u32 = 16 << 10,
-    /// Caps one serialized response, headers plus body; sized as each slot's
-    /// write buffer. A handler response that does not fit becomes a 500.
+    /// Caps one serialized response, headers plus body: the size of a response buffer. A
+    /// handler response that does not fit becomes a 500.
     response_bytes_max: u32 = 32 << 10,
+    /// Body buffers, for requests whose body does not fit beside its head, being read at
+    /// once. A request that needs one while all are lent waits, unread, until one is
+    /// given back. None are made when `request_bytes_max` fits in a head buffer.
+    bodies_max: u32 = 4,
+    /// Response buffers: responses being built and sent at once. Most are sent the moment
+    /// they are built and their buffer is back before the next request; only those whose
+    /// reader is slow keep one. A request ready while all are lent waits, unanswered, until
+    /// one is given back.
+    responses_max: u32 = 64,
     /// The per-request arena; 0 for twice `response_bytes_max`. One buffer serves every
     /// slot, as dispatch runs one request at a time.
     arena_bytes: u32 = 0,
@@ -93,12 +103,52 @@ pub const Options = struct {
     shutdown_timeout_ms: u32 = 5_000,
 };
 
-/// User-space memory `init` will allocate up front — every slot's buffers plus the
-/// handler arena — for the CLI's startup banner.
+/// User-space memory `init` will reserve up front — the slots, the pools and the handler
+/// arena — for the CLI's startup banner. What becomes resident is what was in use at the
+/// busiest moment, as pools lend their most recently returned buffers first.
 pub fn memory_bytes(options: *const Options) u64 {
-    const per_slot: u64 = @as(u64, options.request_bytes_max) + options.response_bytes_max +
-        @sizeOf(Slot) + @sizeOf(u32);
-    return per_slot * options.connections_max + arena_bytes(options);
+    const connections: u64 = options.connections_max;
+    const slots = connections * (@sizeOf(Slot) + @sizeOf(u32) + 2 * @sizeOf(u64));
+    const heads = connections * 2 * (request_module.head_bytes_max + @sizeOf(u32));
+    const bodies = @as(u64, bodies_count(options)) * options.request_bytes_max;
+    const responses = @as(u64, options.responses_max) * options.response_bytes_max;
+
+    return slots + heads + bodies + responses + arena_bytes(options);
+}
+
+/// Body buffers made: none when every request fits in a head buffer.
+pub fn bodies_count(options: *const Options) u32 {
+    std.debug.assert(options.bodies_max <= connections_limit);
+
+    if (options.request_bytes_max <= request_module.head_bytes_max) {
+        return 0;
+    }
+
+    return options.bodies_max;
+}
+
+/// `options` with as many connections as the open-file hard limit allows, when it allows fewer
+/// than asked: a process started with a low limit (PID 1 in a small VM gets 4096) serves fewer
+/// connections rather than not at all. `engine.options.connections_max` says how many.
+pub fn fitted_to_files(files_max: u64, options: Options) Error!Options {
+    std.debug.assert(options.connections_max > 0);
+    std.debug.assert(files_max > 0);
+
+    if (files_needed(&options) <= files_max) {
+        return options;
+    }
+
+    if (files_max <= fd_margin + 1) {
+        return error.FileLimitTooLow;
+    }
+
+    var fitted = options;
+
+    fitted.connections_max = @intCast(@min(files_max - fd_margin, connections_limit));
+
+    std.debug.assert(files_needed(&fitted) <= files_max);
+
+    return fitted;
 }
 
 /// Open-file descriptors the server needs: one per connection slot plus a
@@ -124,6 +174,11 @@ fn release(gpa: std.mem.Allocator, memory: []u8) void {
 }
 
 const buffer_alignment: std.mem.Alignment = .@"16";
+
+const pool_memory: pool_module.Memory = .{
+    .reserve = &reserve,
+    .release = &release,
+};
 
 /// Handler scratch arena: enough to build a response body before serialization, never
 /// less than a fixed floor so small response caps do not starve handlers.
@@ -158,8 +213,11 @@ pub fn backlog(options: *const Options) u31 {
 pub const Counters = struct {
     /// Connections accepted into a slot over the server's life.
     accepted_total: u64 = 0,
-    /// Connections turned away with a 503 because every slot was busy.
-    refused_total: u64 = 0,
+    /// Times every slot was taken and the listener stopped being read: the connections
+    /// that arrived meanwhile waited in the kernel's queue until a slot freed.
+    paused_total: u64 = 0,
+    /// Requests that waited for a body or response buffer to be given back.
+    waited_total: u64 = 0,
     /// Connections closed by `idle_timeout_ms` or `request_timeout_ms` expiring.
     timed_out_total: u64 = 0,
     /// Complete requests handed to the router, pipelined ones included.
@@ -205,9 +263,10 @@ pub const Error = error{
     /// soft limit toward what `Options.files_needed` asks for first, so this means
     /// the hard limit is lower than that.
     FileLimitReached,
-    /// The open-file hard limit cannot cover `Options.files_needed`: lower
-    /// `connections_max` or raise the limit (`ulimit -n`). The CLI reports this one
-    /// by name with the number needed.
+    /// The open-file limit cannot be raised to what the connections need, or the hard limit
+    /// is too low for even one connection beside the server's own files. Below the hard
+    /// limit, `init` serves fewer connections instead (`fitted_to_files`). The CLI reports
+    /// this one by name with the number needed.
     FileLimitTooLow,
     /// The kernel refused to create the readiness queue (kqueue/epoll), or the
     /// shutdown-signal registration failed.
@@ -253,12 +312,22 @@ pub const Slot = struct {
     /// Bumped on every close and packed into the event token, so a readiness
     /// event for a connection that was closed and the slot reused is ignored.
     generation: u32 = 0,
-    /// This slot's fixed read buffer, `Options.request_bytes_max` long.
-    read_buffer: []u8,
+    /// What the connection reads into: a head or body buffer lent while there is input
+    /// in it, empty otherwise (`lending.zig`).
+    read_buffer: []u8 = &.{},
+    /// Which pool `read_buffer` came from.
+    read_held: lending.Held = .none,
     /// Bytes of `read_buffer` holding input not yet consumed.
     read_len: u32 = 0,
-    /// This slot's fixed write buffer, `Options.response_bytes_max` long.
-    write_buffer: []u8,
+    /// What the connection writes from: a response buffer lent while a response is built
+    /// and sent, `error_text` for an error, a head buffer once upgraded; empty otherwise.
+    write_buffer: []u8 = &.{},
+    /// Which pool `write_buffer` came from.
+    write_held: lending.Held = .none,
+    /// The buffer this connection waits for, not being read meanwhile.
+    waiting: lending.Waiting = .none,
+    /// Room for an error response, so an error never waits for a buffer.
+    error_text: [lending.error_text_bytes]u8 = undefined,
     /// Bytes of `write_buffer` queued for sending.
     write_len: u32 = 0,
     /// Bytes of the queued `write_len` already on the wire; a write is in flight
@@ -375,10 +444,19 @@ pub const Engine = struct {
     /// One slot per `Options.connections_max`, indexed by the low half of an
     /// event token.
     slots: []Slot,
-    /// Backing memory for every slot's `read_buffer`, carved up at init.
-    read_buffers: []u8,
-    /// Backing memory for every slot's `write_buffer`, carved up at init.
-    write_buffers: []u8,
+    /// Head buffers, two for every slot: one to read into, and once upgraded one to write
+    /// from, so a slot never waits for one.
+    heads: pool_module.Pool,
+    /// Body buffers of `request_bytes_max`, for bodies that do not fit beside their head.
+    bodies: pool_module.Pool,
+    /// Response buffers of `response_bytes_max`, lent while a response is built and sent.
+    responses: pool_module.Pool,
+    /// Slots with a request in, waiting for a response buffer.
+    waiting_responses: lending.Waiters,
+    /// Slots with a head in, waiting for a body buffer.
+    waiting_bodies: lending.Waiters,
+    /// Whether the listener is read: false while every slot is taken.
+    accepting: bool = true,
     /// The per-request scratch arena handed to handlers as `ctx.arena`, reset for
     /// every request. Dispatch is synchronous, so one buffer serves all slots.
     arena_buffer: []u8,
@@ -419,10 +497,14 @@ pub const Engine = struct {
         gpa: std.mem.Allocator,
         vtables: []const *const Extension,
         on_request: OnRequest,
-        options: Options,
+        wanted: Options,
     ) Error!Engine {
         std.debug.assert(vtables.len <= extensions_max);
-        if (options.connections_max == 0 or options.connections_max > connections_limit) return error.InvalidOptions;
+        if (wanted.connections_max == 0 or wanted.connections_max > connections_limit) return error.InvalidOptions;
+        const options = try fitted_to_files(socket.file_limit_max(), wanted);
+        if (options.responses_max == 0) return error.InvalidOptions;
+        const bodies_needed = options.request_bytes_max > request_module.head_bytes_max;
+        if (bodies_needed and bodies_count(&options) == 0) return error.InvalidOptions;
         if (options.request_bytes_max < request_module.head_bytes_max) return error.InvalidOptions;
         if (options.response_bytes_max < 1 << 10) return error.InvalidOptions;
         if (options.idle_timeout_ms < 2 * scan_interval_ms) return error.InvalidOptions;
@@ -438,20 +520,34 @@ pub const Engine = struct {
 
         try loop.add_listener(listener);
 
-        const count: u64 = options.connections_max;
-
         const slots = gpa.alloc(Slot, options.connections_max) catch return error.OutOfMemory;
         errdefer gpa.free(slots);
 
-        const read_total = std.math.mul(u64, count, options.request_bytes_max) catch
-            return error.OutOfMemory;
-        const read_buffers = try reserve(gpa, @intCast(read_total));
-        errdefer release(gpa, read_buffers);
+        const heads_count = std.math.mul(u32, options.connections_max, 2) catch
+            return error.InvalidOptions;
+        const head_bytes = request_module.head_bytes_max;
+        var heads = try pool_module.Pool.init(gpa, heads_count, head_bytes, pool_memory);
+        errdefer heads.deinit(gpa, pool_memory);
 
-        const write_total = std.math.mul(u64, count, options.response_bytes_max) catch
+        var bodies = try pool_module.Pool.init(
+            gpa,
+            bodies_count(&options),
+            options.request_bytes_max,
+            pool_memory,
+        );
+        errdefer bodies.deinit(gpa, pool_memory);
+
+        var responses = try pool_module.Pool.init(
+            gpa,
+            options.responses_max,
+            options.response_bytes_max,
+            pool_memory,
+        );
+        errdefer responses.deinit(gpa, pool_memory);
+
+        const waiting_tokens = gpa.alloc(u64, 2 * @as(usize, options.connections_max)) catch
             return error.OutOfMemory;
-        const write_buffers = try reserve(gpa, @intCast(write_total));
-        errdefer release(gpa, write_buffers);
+        errdefer gpa.free(waiting_tokens);
 
         const arena_buffer = try reserve(gpa, arena_bytes(&options));
         errdefer release(gpa, arena_buffer);
@@ -463,12 +559,7 @@ pub const Engine = struct {
         errdefer gpa.free(free_stack);
 
         for (slots, 0..) |*slot, index| {
-            slot.* = .{
-                .read_buffer = read_buffers[index * options.request_bytes_max ..][0..options
-                    .request_bytes_max],
-                .write_buffer = write_buffers[index * options.response_bytes_max ..][0..options
-                    .response_bytes_max],
-            };
+            slot.* = .{};
             free_stack[index] = @intCast(options.connections_max - 1 - index);
         }
 
@@ -495,8 +586,15 @@ pub const Engine = struct {
             .listener = listener,
             .loop = loop,
             .slots = slots,
-            .read_buffers = read_buffers,
-            .write_buffers = write_buffers,
+            .heads = heads,
+            .bodies = bodies,
+            .responses = responses,
+            .waiting_responses = .{
+                .tokens = waiting_tokens[0..options.connections_max],
+            },
+            .waiting_bodies = .{
+                .tokens = waiting_tokens[options.connections_max..],
+            },
             .arena_buffer = arena_buffer,
             .arena_sites = arena_sites,
             .free_stack = free_stack,
@@ -530,8 +628,10 @@ pub const Engine = struct {
         server.gpa.free(server.free_stack);
         server.arena_sites.deinit(server.gpa);
         release(server.gpa, server.arena_buffer);
-        release(server.gpa, server.write_buffers);
-        release(server.gpa, server.read_buffers);
+        server.gpa.free(server.waiting_responses.tokens.ptr[0 .. 2 * server.slots.len]);
+        server.responses.deinit(server.gpa, pool_memory);
+        server.bodies.deinit(server.gpa, pool_memory);
+        server.heads.deinit(server.gpa, pool_memory);
         server.gpa.free(server.slots);
         server.* = undefined;
     }
@@ -614,6 +714,8 @@ pub const Engine = struct {
             server.next_scan_ms = now + scan_interval_ms;
         }
 
+        lending.resume_waiting(server);
+
         if (server.phase == .draining) {
             const drained = server.active() == 0;
 
@@ -660,6 +762,15 @@ pub const Engine = struct {
         const slot = &server.slots[index];
 
         if (slot.state == .free or slot.generation != generation) {
+            return;
+        }
+
+        // Not read until its buffer is lent; a peer gone meanwhile only closes it.
+        if (slot.waiting != .none) {
+            if (item.eof) {
+                connection.close_slot(server, slot);
+            }
+
             return;
         }
 
@@ -716,15 +827,14 @@ pub const Engine = struct {
         var accepted: u32 = 0;
 
         while (accepted < accept_batch) : (accepted += 1) {
+            if (server.free_count == 0) {
+                return server.pause_accepting();
+            }
+
             const fd = socket.accept(server.listener) catch {
                 server.counters.accept_errors_total += 1;
                 return;
             } orelse return;
-
-            if (server.free_count == 0) {
-                server.refuse(fd);
-                continue;
-            }
 
             server.free_count -= 1;
 
@@ -738,8 +848,6 @@ pub const Engine = struct {
                 .peer = socket.peer_address(fd),
                 .state = .reading,
                 .generation = slot.generation,
-                .read_buffer = slot.read_buffer,
-                .write_buffer = slot.write_buffer,
                 .deadline_ms = now_ms() + server.options.idle_timeout_ms,
             };
 
@@ -759,21 +867,35 @@ pub const Engine = struct {
         }
     }
 
-    fn refuse(server: *Engine, fd: socket.Fd) void {
+    /// Every slot is taken: the listener is not read, and new connections wait in the
+    /// kernel's queue until `slot_freed`.
+    fn pause_accepting(server: *Engine) void {
         std.debug.assert(server.free_count == 0);
-        std.debug.assert(fd != socket.invalid);
+        std.debug.assert(server.accepting);
 
-        var sink: [1024]u8 = undefined;
-        var drains: u32 = 0;
+        server.loop.watch_listener(server.listener, false) catch {
+            server.counters.event_errors_total += 1;
+            return;
+        };
 
-        while (drains < 16) : (drains += 1) {
-            _ = socket.recv(fd, &sink) catch break;
+        server.accepting = false;
+        server.counters.paused_total += 1;
+    }
+
+    /// A slot was given back: if accepting was paused, the listener is read again.
+    pub fn slot_freed(server: *Engine) void {
+        std.debug.assert(server.free_count > 0);
+
+        if (server.accepting or server.phase != .running) {
+            return;
         }
 
-        _ = socket.send(fd, refused_response) catch 0;
-        socket.close(fd);
+        server.loop.watch_listener(server.listener, true) catch {
+            server.counters.event_errors_total += 1;
+            return;
+        };
 
-        server.counters.refused_total += 1;
+        server.accepting = true;
     }
 
     fn shutdown_begin(server: *Engine) void {
@@ -858,4 +980,19 @@ pub fn token(index: u32, generation: u32) u64 {
 /// The monotonic clock every deadline in the engine is measured against.
 pub fn now_ms() i64 {
     return socket.monotonic_ms();
+}
+
+test "a low open-file limit lowers the connections instead of refusing to start" {
+    const asked: Options = .{
+        .connections_max = 4096,
+    };
+
+    const roomy = try fitted_to_files(1 << 20, asked);
+    try std.testing.expectEqual(@as(u32, 4096), roomy.connections_max);
+
+    const vm_init = try fitted_to_files(4096, asked);
+    try std.testing.expectEqual(@as(u32, 4096 - fd_margin), vm_init.connections_max);
+    try std.testing.expect(files_needed(&vm_init) <= 4096);
+
+    try std.testing.expectError(error.FileLimitTooLow, fitted_to_files(fd_margin, asked));
 }

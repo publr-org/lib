@@ -57,11 +57,14 @@ flowchart TD
    extension a consumer doesn't declare is never compiled.
 
 2. **Fixed capacity, allocated once.** `App.init` preallocates everything the server
-   will ever use: one slot per connection (fd, state, fixed read/write buffers), a
-   shared per-request arena, a free-slot stack, and each extension's state. The hot
-   path never allocates. Every bound has a defined overflow behavior: no free slot →
-   503, oversized head → 431, oversized body → 413, full kernel buffers → TCP
-   backpressure. There is no request queue object anywhere.
+   will ever use: one slot per connection (fd, state, deadlines, no buffers of its own),
+   pools of head, body and response buffers that slots borrow while they read or send
+   and give back when idle (`pool.zig`, `lending.zig`), a shared per-request arena, a
+   free-slot stack, and each extension's state. The hot path never allocates. Every
+   bound has a defined overflow behavior: no free slot → the listener is not read and
+   new connections wait in the kernel's queue, no free body or response buffer → the
+   connection waits unread until one is given back, oversized head → 431, oversized
+   body → 413, full kernel buffers → TCP backpressure.
 
 3. **Single-threaded, single-process, permanently.** One server is one event loop on
    one thread in one process: no locks, no data races, no sharded state, and the

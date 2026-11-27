@@ -194,7 +194,7 @@ errors (wrk over a private network, ReleaseSafe):
 | $4/mo VPS (1 shared vCPU, 512 MB) | one instance, 2000 connections | **54,935** |
 | $109/mo server (4 dedicated vCPU), single core | one instance | **89,420** (p50 2 ms, p99 6.5 ms) |
 
-Across all stress runs, **90+ million requests were served with zero failed requests** — zero refusals under capacity, clean graceful drains, and server counters reconciling with the client exactly. Overload sheds load loudly (a delivered 503 with `Retry-After`), never silently.
+Across all stress runs, **90+ million requests were served with zero failed requests** — zero refusals under capacity, clean graceful drains, and server counters reconciling with the client exactly. When every connection is taken, new ones wait in the kernel's queue until one frees, counted in `paused_total`; nothing is refused for lack of a slot or a buffer.
 
 Reproduce with the artillery configs in `stress/`, or wrk against
 `./zig-out/bin/hello`. Remember that localhost numbers are a ceiling, not a deploy
@@ -220,11 +220,14 @@ One options struct, three ways in, strict precedence: **defaults < `--config`
 | `--config <path>` | — | — | .zon file whose fields mirror this table |
 | `--help` | — | — | prints this table's live version |
 
-Memory is sized by these values and reserved once at startup: each connection slot
-owns its request and response buffers (~48 KiB per connection at the defaults, ~469
-MiB for 10,000 slots), plus one shared per-request arena. Reserved is not resident:
-the buffers are taken without being written, so a slot's pages are only committed
-once a connection uses them, and an idle server costs its code and state. The startup banner prints
+Memory is sized by these values and reserved once at startup: a slot per connection,
+which owns no buffers, and pools it borrows from while it reads or sends: two 16 KiB
+head buffers per slot, `bodies_max` body buffers of `request_bytes_max`, `responses_max`
+response buffers of `response_bytes_max`, plus one shared per-request arena. An idle
+keep-alive connection holds nothing but its slot. Reserved is not resident: the buffers
+are taken without being written, and a pool lends the buffer given back last, so what is
+committed is what was in use at the busiest moment, and an idle server costs its code and
+state. The startup banner prints
 the resolved memory estimate, fd requirement, and the kernel's real backlog cap; the
 process raises its own fd limit or fails with an actionable message.
 

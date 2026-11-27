@@ -281,10 +281,10 @@ fn print_banner(server: *const engine_module.Engine) void {
 /// Prints the end-of-run counters after `listen()` returns.
 fn print_counters(stats: *const engine_module.Counters) void {
     std.debug.print(
-        "http-server: stopped; accepted {d}, refused {d}, timed out {d}, requests {d}\n",
+        "http-server: stopped; accepted {d}, paused {d}, timed out {d}, requests {d}\n",
         .{
             stats.accepted_total,
-            stats.refused_total,
+            stats.paused_total,
             stats.timed_out_total,
             stats.requests_total,
         },
