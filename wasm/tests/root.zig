@@ -237,6 +237,24 @@ test "a ceiling below the module's own initial memory refuses the instance" {
     try std.testing.expect(std.mem.indexOf(u8, fixture.problem.text(), "ceiling") != null);
 }
 
+test "the pool is not cleared at init: its pages stay untouched until they are used" {
+    const heap = try std.testing.allocator.alloc(u8, heap_bytes);
+    defer std.testing.allocator.free(heap);
+
+    const tail = heap[heap.len - 4096 ..];
+
+    @memset(tail, 0x5a);
+
+    var runtime: wasm.Runtime = undefined;
+    try runtime.init(heap, &imports, .{});
+    defer runtime.deinit();
+
+    // WAMR as released cleared the whole pool here, writing every page of it.
+    for (tail[0 .. tail.len - 64]) |byte| {
+        try std.testing.expectEqual(@as(u8, 0x5a), byte);
+    }
+}
+
 test "bytes that are not a module are refused with a reason" {
     const heap = try std.testing.allocator.alloc(u8, heap_bytes);
     defer std.testing.allocator.free(heap);

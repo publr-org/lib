@@ -12,7 +12,9 @@ gc_init_internal(gc_heap_t *heap, char *base_addr, gc_size_t heap_max_size)
     int ret;
 
     memset(heap, 0, sizeof *heap);
-    memset(base_addr, 0, heap_max_size);
+    /* Publr: the pool is not cleared. Every header below is written in full, so nothing
+       reads the rest before it is allocated, and clearing it wrote every page of the
+       pool at startup: the whole pool resident in every process, used or not. */
 
     ret = os_mutex_init(&heap->lock);
     if (ret != BHT_OK) {

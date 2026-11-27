@@ -61,7 +61,7 @@ name, `section.write` appends one: what a host inspects before it runs anything.
 
 **Vendored, and the flags are part of the contract.** `vendor/wamr/` is WAMR 2.4.5,
 the files the interpreter needs, as released (Apache-2.0 WITH LLVM-exception,
-`vendor/wamr/LICENSE`), with one change of ours, below. It is compiled with the fast interpreter only: no AOT, no JIT,
+`vendor/wamr/LICENSE`), with two changes of ours, below. It is compiled with the fast interpreter only: no AOT, no JIT,
 no WASI, no threads; reference types and bulk memory, which toolchains emit by default;
 instruction metering; software bounds checks. macOS and Linux, on aarch64 and x86_64.
 
@@ -75,6 +75,15 @@ A call nested in a host function then counts against the outer call's budget, wh
 `Instance.call` sets only for the outermost call. When WAMR is imported again, carry the
 change over; `tests/root.zig` ("work nested in a host function counts against the outer
 call's budget") fails without it.
+
+**The pool is not cleared.** As released, `gc_init_internal` (`mem-alloc/ems/ems_kfc.c`)
+clears the whole pool it is given at `init`, which writes every page of it: the whole
+`heap` becomes resident memory in every process at startup, whether a module is ever
+loaded or not (32 MiB in Publr's `serve` and its queue worker). Every header it needs is
+written in full after that, so nothing reads the rest of the pool before allocating it;
+the clear is gone (marked `Publr:`), and a page of the pool is written only once WAMR uses
+it. `tests/root.zig` ("the pool is not cleared at init") fails without it; the other
+tests run on pools that are not zero.
 
 **In the browser.** Built for `wasm32` (a host that is itself WebAssembly in a page), the
 same API runs each module on the browser's WebAssembly through the page's functions in
