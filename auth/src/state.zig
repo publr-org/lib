@@ -160,7 +160,10 @@ pub const State = struct {
 
         const advice: ?u32 = comptime switch (builtin.os.tag) {
             .linux => std.posix.MADV.DONTNEED,
-            .macos, .ios, .freebsd, .netbsd, .openbsd, .dragonfly => std.posix.MADV.FREE,
+            // Plain FREE leaves the pages counted against the process until the system
+            // needs them; FREE_REUSABLE takes them off its footprint at once.
+            .macos, .ios => std.posix.MADV.FREE_REUSABLE,
+            .freebsd, .netbsd, .openbsd, .dragonfly => std.posix.MADV.FREE,
             else => null,
         };
 
