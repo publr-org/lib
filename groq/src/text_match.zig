@@ -285,7 +285,13 @@ fn to_lower(point: u21) u21 {
     return switch (point) {
         'A'...'Z' => point + 32,
         0xc0...0xd6, 0xd8...0xde => point + 32,
-        0x100...0x17f => if (point % 2 == 0) point + 1 else point,
+        // Latin Extended-A pairs a capital with the letter after it: on even points up to
+        // U+0137 and from U+014A, on odd points between (Ł U+0141 is ł U+0142) and from
+        // U+0179 (Ź, Ż, Ž). ĸ, ŉ, ı and ſ have no capital here; İ lowers to i.
+        0x130 => 'i',
+        0x100...0x12f, 0x132...0x137, 0x14a...0x177 => if (point % 2 == 0) point + 1 else point,
+        0x139...0x148, 0x179...0x17e => if (point % 2 == 1) point + 1 else point,
+        0x178 => 0xff,
         0x391...0x3a1, 0x3a3...0x3ab => point + 32,
         0x400...0x40f => point + 80,
         0x410...0x42f => point + 32,
@@ -355,4 +361,31 @@ test "match: tokens, dots, wildcards, case" {
     try std.testing.expect(!try matches(arena, text, .{
         .string = "",
     }));
+}
+
+test "match: Polish capitals lower as their small letters" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const text: Value = .{
+        .string = "ŁÓDŹ, ŻÓŁW, KOŃ, ĄĆĘŚ",
+    };
+
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "łódź",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "żółw",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "koń",
+    }));
+    try std.testing.expect(try matches(arena, text, .{
+        .string = "ąćęś",
+    }));
+    try std.testing.expectEqual(@as(u21, 0x142), to_lower(0x141));
+    try std.testing.expectEqual(@as(u21, 0x142), to_lower(0x142));
+    try std.testing.expectEqual(@as(u21, 0x17c), to_lower(0x17b));
+    try std.testing.expectEqual(@as(u21, 0x138), to_lower(0x138));
+    try std.testing.expectEqual(@as(u21, 0xff), to_lower(0x178));
 }
